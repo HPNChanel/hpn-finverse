@@ -1,0 +1,73 @@
+<svg width="500" height="400" viewBox="0 0 500 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Financial Dashboard Illustration -->
+  <!-- Background -->
+  <rect width="500" height="400" rx="20" fill="#F5F7FA" />
+  
+  <!-- Graph paper grid -->
+  <g opacity="0.2">
+    <path d="M50 50H450" stroke="#1976D2" stroke-width="1" />
+    <path d="M50 100H450" stroke="#1976D2" stroke-width="1" />
+    <path d="M50 150H450" stroke="#1976D2" stroke-width="1" />
+    <path d="M50 200H450" stroke="#1976D2" stroke-width="1" />
+    <path d="M50 250H450" stroke="#1976D2" stroke-width="1" />
+    <path d="M50 300H450" stroke="#1976D2" stroke-width="1" />
+    <path d="M50 350H450" stroke="#1976D2" stroke-width="1" />
+    
+    <path d="M100 50V350" stroke="#1976D2" stroke-width="1" />
+    <path d="M150 50V350" stroke="#1976D2" stroke-width="1" />
+    <path d="M200 50V350" stroke="#1976D2" stroke-width="1" />
+    <path d="M250 50V350" stroke="#1976D2" stroke-width="1" />
+    <path d="M300 50V350" stroke="#1976D2" stroke-width="1" />
+    <path d="M350 50V350" stroke="#1976D2" stroke-width="1" />
+    <path d="M400 50V350" stroke="#1976D2" stroke-width="1" />
+  </g>
+  
+  <!-- Charts -->
+  <g>
+    <!-- Line chart -->
+    <path d="M100 250L150 230L200 260L250 200L300 180L350 150L400 170" stroke="#1976D2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="100" cy="250" r="5" fill="#1976D2" />
+    <circle cx="150" cy="230" r="5" fill="#1976D2" />
+    <circle cx="200" cy="260" r="5" fill="#1976D2" />
+    <circle cx="250" cy="200" r="5" fill="#1976D2" />
+    <circle cx="300" cy="180" r="5" fill="#1976D2" />
+    <circle cx="350" cy="150" r="5" fill="#1976D2" />
+    <circle cx="400" cy="170" r="5" fill="#1976D2" />
+  </g>
+  
+  <!-- Bar chart -->
+  <g>
+    <rect x="110" y="300" width="20" height="50" rx="4" fill="#2E7D32" />
+    <rect x="160" y="280" width="20" height="70" rx="4" fill="#2E7D32" />
+    <rect x="210" y="310" width="20" height="40" rx="4" fill="#2E7D32" />
+    <rect x="260" y="270" width="20" height="80" rx="4" fill="#2E7D32" />
+    <rect x="310" y="290" width="20" height="60" rx="4" fill="#2E7D32" />
+    <rect x="360" y="260" width="20" height="90" rx="4" fill="#2E7D32" />
+  </g>
+  
+  <!-- Pie chart -->
+  <g>
+    <path d="M130 120 L130 70 A50 50 0 0 1 173 98 Z" fill="#1976D2" />
+    <path d="M130 120 L173 98 A50 50 0 0 1 147 165 Z" fill="#2E7D32" />
+    <path d="M130 120 L147 165 A50 50 0 0 1 80 140 Z" fill="#9C27B0" />
+    <path d="M130 120 L80 140 A50 50 0 0 1 130 70 Z" fill="#FF9800" />
+  </g>
+  
+  <!-- Cards -->
+  <g>
+    <rect x="250" y="80" width="180" height="90" rx="10" fill="white" stroke="#E0E0E0" stroke-width="2" />
+    <rect x="270" y="100" width="60" height="10" rx="5" fill="#E0E0E0" />
+    <rect x="270" y="120" width="100" height="15" rx="5" fill="#1976D2" />
+    <rect x="270" y="145" width="40" height="10" rx="5" fill="#E0E0E0" />
+    
+    <rect x="250" y="180" width="180" height="90" rx="10" fill="white" stroke="#E0E0E0" stroke-width="2" />
+    <rect x="270" y="200" width="60" height="10" rx="5" fill="#E0E0E0" />
+    <rect x="270" y="220" width="140" height="15" rx="5" fill="#2E7D32" />
+    <rect x="270" y="245" width="40" height="10" rx="5" fill="#E0E0E0" />
+    
+    <rect x="250" y="280" width="180" height="90" rx="10" fill="white" stroke="#E0E0E0" stroke-width="2" />
+    <rect x="270" y="300" width="60" height="10" rx="5" fill="#E0E0E0" />
+    <rect x="270" y="320" width="80" height="15" rx="5" fill="#9C27B0" />
+    <rect x="270" y="345" width="40" height="10" rx="5" fill="#E0E0E0" />
+  </g>
+</svg>
