@@ -5,6 +5,7 @@ Router for recurring transactions in FinVerse API
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from fastapi.logger import logger
 
 from app.core.auth import get_current_user
 from app.db.session import get_db
@@ -19,7 +20,7 @@ from app.services.recurring_transaction_service import RecurringTransactionServi
 from app.models.user import User
 
 router = APIRouter(
-    prefix="/api/v1/recurring",
+    prefix="/recurring",
     tags=["recurring-transactions"],
     responses={404: {"description": "Not found"}},
 )
@@ -58,7 +59,16 @@ async def create_recurring_transaction(
     """
     Create a new recurring transaction
     """
-    return RecurringTransactionService.create_recurring_transaction(db, transaction_data, current_user.id)
+    try:
+        return RecurringTransactionService.create_recurring_transaction(db, transaction_data, current_user.id)
+    except Exception as e:
+        logger.error(f"[RecurringTransaction] Error creating transaction: {str(e)}")
+        logger.error(f"[RecurringTransaction] Payload: {transaction_data.dict()}")
+        logger.error(f"[RecurringTransaction] User ID: {current_user.id}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create recurring transaction"
+        )
 
 
 @router.put("/{transaction_id}", response_model=RecurringTransactionResponse)

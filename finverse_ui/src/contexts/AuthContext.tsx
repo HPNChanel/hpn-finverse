@@ -21,6 +21,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper to check if current path is the landing page
+const isLandingPage = (): boolean => {
+  return window.location.pathname === '/';
+};
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -46,6 +51,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const fetchUserData = useCallback(async (): Promise<void> => {
     if (!localStorage.getItem('token')) return;
     
+    // Skip API call on landing page
+    if (isLandingPage()) {
+      console.log('Skipping auth check on landing page');
+      return;
+    }
+    
     try {
       const response = await api.get<UserInfo>('/auth/me');
       setUser(response.data);
@@ -61,18 +72,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Function to refresh user data (used when changes are made)
   const refreshUserData = useCallback(async (): Promise<void> => {
+    // Skip refresh on landing page
+    if (isLandingPage()) return;
+    
     await fetchUserData();
   }, [fetchUserData]);
 
   // Check if token exists in localStorage on mount
   useEffect(() => {
     const token = localStorage.getItem('token');
+    
     if (token) {
       setIsAuthenticated(true);
-      fetchUserData();
+      
+      // Only fetch user data if not on landing page
+      if (!isLandingPage()) {
+        fetchUserData();
+      }
     } else {
       setIsAuthenticated(false);
     }
+  }, [fetchUserData]);
+
+  // Also listen to path changes to handle navigation to/from landing page
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const token = localStorage.getItem('token');
+      if (token && !isLandingPage()) {
+        fetchUserData();
+      }
+    };
+
+    // Listen to navigation events
+    window.addEventListener('popstate', handleLocationChange);
+    
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+    };
   }, [fetchUserData]);
 
   // Store token in localStorage and set authenticated state

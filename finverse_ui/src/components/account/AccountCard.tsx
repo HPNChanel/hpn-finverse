@@ -26,7 +26,7 @@ import {
 } from '@mui/icons-material';
 import { useFormatters } from '../../hooks';
 import accountService from '../../services/accountService';
-import type { Account } from '../../types';
+import type { Account } from '../../types/index'; // Fix import path
 
 interface AccountCardProps {
   account: Account;

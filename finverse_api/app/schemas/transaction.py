@@ -20,6 +20,7 @@ class TransactionTypeEnum(str, Enum):
 class TransactionBase(BaseModel):
     """Base schema for transaction"""
     amount: float = Field(..., gt=0)
+    category: Optional[str] = None  # Changed from category_id to category string
     description: Optional[str] = None
 
 
@@ -34,6 +35,7 @@ class TransactionResponse(BaseModel):
     id: int
     user_id: int
     amount: float
+    category: Optional[str] = None  # Changed from category_id to category
     transaction_type: str
     description: Optional[str] = None
     created_at: datetime

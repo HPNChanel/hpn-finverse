@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 
+// Restore original baseURL to fix 404 errors
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
 // Create an Axios instance with default configuration

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box,
   Button,
@@ -16,29 +16,35 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
-  Typography
+  Typography,
+  CircularProgress,
+  Alert,
+  Tooltip
 } from '@mui/material';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 
 import { 
   FrequencyType, 
   FrequencyTypeLabels, 
   TransactionType,
   TransactionTypeLabels,
+  formatFrequency
 } from '../../services/recurringTransactionService';
 import type { 
   RecurringTransaction,
   RecurringTransactionCreate,
   RecurringTransactionUpdate
 } from '../../services/recurringTransactionService';
+import { useAccounts } from '../../hooks'; // Use the hooks barrel file instead of direct import
 
 // Define validation schema with Zod
 const formSchema = z.object({
-  category_id: z.number().int().positive('Category is required'),
+  category_id: z.string().min(1, 'Category is required'),
   wallet_id: z.number().int().positive('Account is required'),
   amount: z.number().positive('Amount must be greater than 0'),
   transaction_type: z.number().int().min(0).max(1),
@@ -67,11 +73,19 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
   transaction,
   title = 'Create Recurring Transaction'
 }) => {
+  // Fetch available accounts/wallets
+  const { accounts, loading: accountsLoading } = useAccounts();
+  
+  // Form submission state
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [nextOccurrence, setNextOccurrence] = useState<string | null>(null);
+  
   // Initialize form with default values or existing transaction data
   const { control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     defaultValues: transaction ? {
-      category_id: transaction.category_id,
+      category_id: transaction.category_id.toString(),
       wallet_id: transaction.wallet_id,
       amount: Number(transaction.amount),
       transaction_type: transaction.transaction_type,
@@ -82,8 +96,8 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
       end_date: transaction.end_date ? new Date(transaction.end_date) : null,
       is_active: transaction.is_active,
     } : {
-      category_id: 0,
-      wallet_id: 0,
+      category_id: '',
+      wallet_id: accounts && accounts.length > 0 ? accounts[0].id : 0,
       amount: 0,
       transaction_type: TransactionType.EXPENSE,
       description: '',
@@ -95,8 +109,61 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
     }
   });
   
+  // Update default wallet_id when accounts load
+  useEffect(() => {
+    if (accounts?.length > 0 && !transaction && !watch('wallet_id')) {
+      setValue('wallet_id', accounts[0].id);
+    }
+  }, [accounts, setValue, transaction, watch]);
+  
   // Watch frequency type to conditionally render frequency value input
   const frequencyType = watch('frequency_type');
+  const startDate = watch('start_date');
+  
+  // Provide a preview of next occurrence based on frequency settings
+  useEffect(() => {
+    if (startDate) {
+      try {
+        const frequencyValue = watch('frequency_value');
+        const dateStr = startDate instanceof Date ? startDate : new Date(startDate);
+        
+        // Simple preview calculation (this doesn't match exact backend logic but gives a reasonable preview)
+        let nextDate: Date;
+        
+        switch (frequencyType) {
+          case FrequencyType.DAILY:
+            nextDate = new Date(dateStr);
+            nextDate.setDate(nextDate.getDate() + 1);
+            break;
+          case FrequencyType.WEEKLY:
+            nextDate = new Date(dateStr);
+            const day = nextDate.getDay();
+            const daysToAdd = (frequencyValue - day + 7) % 7;
+            nextDate.setDate(nextDate.getDate() + (daysToAdd === 0 ? 7 : daysToAdd));
+            break;
+          case FrequencyType.MONTHLY:
+            nextDate = new Date(dateStr);
+            nextDate.setMonth(nextDate.getMonth() + 1);
+            // Handle month length issues
+            const desiredDay = Math.min(frequencyValue, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate());
+            nextDate.setDate(desiredDay);
+            break;
+          case FrequencyType.YEARLY:
+            nextDate = new Date(dateStr);
+            nextDate.setFullYear(nextDate.getFullYear() + 1);
+            break;
+          default:
+            nextDate = new Date(dateStr);
+        }
+        
+        setNextOccurrence(nextDate.toLocaleDateString('en-US', {
+          year: 'numeric', month: 'long', day: 'numeric'
+        }));
+      } catch (error) {
+        setNextOccurrence(null);
+      }
+    }
+  }, [frequencyType, startDate, watch]);
   
   // Get descriptions for frequency value based on frequency type
   const getFrequencyValueDescription = () => {
@@ -138,20 +205,78 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
     ));
   };
   
+  // When start date changes and frequency type is monthly, default frequency value to the day of month
+  useEffect(() => {
+    if (frequencyType === FrequencyType.MONTHLY && startDate instanceof Date) {
+      setValue('frequency_value', startDate.getDate());
+    }
+  }, [startDate, frequencyType, setValue]);
+  
   // Handle form submission
-  const handleFormSubmit = (data: FormSchemaType) => {
-    onSubmit({
-      ...data,
-      start_date: data.start_date.toISOString().split('T')[0],
-      end_date: data.end_date ? data.end_date.toISOString().split('T')[0] : undefined,
-    });
-    onClose();
+  const handleFormSubmit = async (data: FormSchemaType) => {
+    try {
+      setSubmitting(true);
+      setFormError(null);
+      
+      // Format data for API submission
+      const formattedData = {
+        category: data.category_id, // Backend expects category as string, not category_id
+        wallet_id: Number(data.wallet_id),
+        amount: Number(data.amount),
+        transaction_type: Number(data.transaction_type),
+        frequency_type: Number(data.frequency_type),
+        frequency_value: Number(data.frequency_value),
+        description: data.description || undefined,
+        is_active: Boolean(data.is_active),
+        // Format dates as YYYY-MM-DD
+        start_date: data.start_date instanceof Date ? 
+          data.start_date.toISOString().split('T')[0] : 
+          new Date(data.start_date).toISOString().split('T')[0],
+        // Only include end_date if it exists
+        ...(data.end_date && {
+          end_date: data.end_date instanceof Date ? 
+            data.end_date.toISOString().split('T')[0] : 
+            new Date(data.end_date).toISOString().split('T')[0]
+        })
+      };
+      
+      console.log('Submitting recurring transaction:', formattedData);
+      
+      await onSubmit(formattedData);
+      onClose();
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      if (error instanceof Error) {
+        setFormError(error.message);
+      } else {
+        setFormError('An unexpected error occurred');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
   
   return (
     <Dialog open={isOpen} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
+        {formError && (
+          <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
+            {formError}
+          </Alert>
+        )}
+        
+        {nextOccurrence && (
+          <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+            <Typography variant="body2">
+              <strong>Next Occurrence Preview:</strong> {nextOccurrence}
+            </Typography>
+            <Typography variant="caption">
+              (Actual date may vary slightly based on server calculation)
+            </Typography>
+          </Alert>
+        )}
+        
         <Box component="form" noValidate sx={{ mt: 2 }}>
           <LocalizationProvider dateAdapter={AdapterDateFns}>
             <Grid container spacing={3}>
@@ -197,6 +322,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                       error={!!errors.amount}
                       helperText={errors.amount?.message}
                       onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                      required
                     />
                   )}
                 />
@@ -230,13 +356,19 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                       <Select
                         {...field}
                         label="Category"
+                        required
                       >
-                        {/* TODO: Replace with actual categories from API */}
-                        <MenuItem value={1}>Food</MenuItem>
-                        <MenuItem value={2}>Transport</MenuItem>
-                        <MenuItem value={3}>Housing</MenuItem>
-                        <MenuItem value={4}>Entertainment</MenuItem>
-                        <MenuItem value={5}>Salary</MenuItem>
+                        <MenuItem value="Food">Food</MenuItem>
+                        <MenuItem value="Transport">Transport</MenuItem>
+                        <MenuItem value="Housing">Housing</MenuItem>
+                        <MenuItem value="Entertainment">Entertainment</MenuItem>
+                        <MenuItem value="Utilities">Utilities</MenuItem>
+                        <MenuItem value="Insurance">Insurance</MenuItem>
+                        <MenuItem value="Medical">Medical</MenuItem>
+                        <MenuItem value="Education">Education</MenuItem>
+                        <MenuItem value="Salary">Salary</MenuItem>
+                        <MenuItem value="Investment">Investment</MenuItem>
+                        <MenuItem value="Other">Other</MenuItem>
                       </Select>
                       {errors.category_id && <FormHelperText>{errors.category_id.message}</FormHelperText>}
                     </FormControl>
@@ -255,11 +387,20 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                       <Select
                         {...field}
                         label="Account"
+                        required
+                        disabled={accountsLoading}
                       >
-                        {/* TODO: Replace with actual accounts from API */}
-                        <MenuItem value={1}>Main Account</MenuItem>
-                        <MenuItem value={2}>Savings</MenuItem>
-                        <MenuItem value={3}>Investment</MenuItem>
+                        {accountsLoading ? (
+                          <MenuItem disabled>Loading accounts...</MenuItem>
+                        ) : accounts && accounts.length > 0 ? (
+                          accounts.map(account => (
+                            <MenuItem key={account.id} value={account.id}>
+                              {account.name} ({account.type}) - ${account.balance.toFixed(2)}
+                            </MenuItem>
+                          ))
+                        ) : (
+                          <MenuItem disabled>No accounts found</MenuItem>
+                        )}
                       </Select>
                       {errors.wallet_id && <FormHelperText>{errors.wallet_id.message}</FormHelperText>}
                     </FormControl>
@@ -286,8 +427,11 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                             setValue('frequency_value', 1);
                           } else if (type === FrequencyType.WEEKLY) {
                             setValue('frequency_value', 0);
-                          } else if (type === FrequencyType.MONTHLY) {
-                            setValue('frequency_value', 1);
+                          } else if (type === FrequencyType.MONTHLY && startDate) {
+                            // For monthly, default to the day of the month from the start date
+                            const day = startDate instanceof Date ? 
+                              startDate.getDate() : new Date(startDate).getDate();
+                            setValue('frequency_value', day);
                           } else if (type === FrequencyType.YEARLY) {
                             setValue('frequency_value', 1);
                           }
@@ -311,7 +455,12 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                   control={control}
                   render={({ field }) => (
                     <FormControl fullWidth error={!!errors.frequency_value}>
-                      <InputLabel>{frequencyType === FrequencyType.WEEKLY ? 'Day of Week' : 'Day'}</InputLabel>
+                      <Box display="flex" alignItems="center">
+                        <InputLabel>{frequencyType === FrequencyType.WEEKLY ? 'Day of Week' : 'Day'}</InputLabel>
+                        <Tooltip title={getFrequencyValueDescription()} placement="top">
+                          <HelpOutlineIcon fontSize="small" sx={{ ml: 1, opacity: 0.7 }} />
+                        </Tooltip>
+                      </Box>
                       {frequencyType === FrequencyType.WEEKLY ? (
                         <Select
                           {...field}
@@ -356,7 +505,8 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                         textField: {
                           fullWidth: true,
                           error: !!errors.start_date,
-                          helperText: errors.start_date?.message
+                          helperText: errors.start_date?.message,
+                          required: true
                         }
                       }}
                     />
@@ -393,6 +543,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
                   control={control}
                   render={({ field }) => (
                     <FormControl fullWidth>
+                      <Typography variant="subtitle1" gutterBottom>Status</Typography>
                       <ToggleButtonGroup
                         color="primary"
                         value={field.value ? 'active' : 'inactive'}
@@ -412,18 +563,25 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} color="inherit">Cancel</Button>
+        <Button 
+          onClick={onClose} 
+          color="inherit"
+          disabled={submitting}
+        >
+          Cancel
+        </Button>
         <Button 
           onClick={handleSubmit(handleFormSubmit)} 
           variant="contained" 
           color="primary"
-          disabled={isSubmitting}
+          disabled={submitting}
+          startIcon={submitting ? <CircularProgress size={20} /> : null}
         >
-          {transaction ? 'Update' : 'Create'}
+          {submitting ? 'Saving...' : transaction ? 'Update' : 'Create'}
         </Button>
       </DialogActions>
     </Dialog>
   );
 };
 
-export default RecurringTransactionForm; 
+export default RecurringTransactionForm;

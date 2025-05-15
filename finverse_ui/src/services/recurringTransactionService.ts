@@ -1,5 +1,6 @@
 import { AxiosError } from 'axios';
 import api from './api';
+import { handleErrorResponse } from '../utils/importFixes';
 
 // Types for recurring transactions
 export interface RecurringTransaction {
@@ -44,6 +45,12 @@ export interface RecurringTransactionUpdate {
   start_date?: string;
   end_date?: string;
   is_active?: boolean;
+}
+
+// Error response interface
+interface ApiErrorResponse {
+  detail?: string;
+  message?: string;
 }
 
 // Enum-like interfaces for frequency and transaction types
@@ -94,12 +101,21 @@ export const formatFrequency = (type: number, value: number): string => {
   }
 };
 
+// Helper to extract error message from API error
+const getErrorDetail = (responseData: unknown): string => {
+  if (responseData && typeof responseData === 'object') {
+    const errorData = responseData as ApiErrorResponse;
+    return errorData.detail || errorData.message || 'Please check your input and try again.';
+  }
+  return 'Please check your input and try again.';
+};
+
 // Service for recurring transactions
 export const recurringTransactionService = {
   // Get all recurring transactions for the current user
   getRecurringTransactions: async (): Promise<RecurringTransaction[]> => {
     try {
-      const response = await api.get('/api/v1/recurring');
+      const response = await api.get('/recurring');
       return response.data.recurring_transactions;
     } catch (error) {
       const err = error as AxiosError;
@@ -111,7 +127,7 @@ export const recurringTransactionService = {
   // Get a specific recurring transaction by ID
   getRecurringTransaction: async (id: number): Promise<RecurringTransaction> => {
     try {
-      const response = await api.get(`/api/v1/recurring/${id}`);
+      const response = await api.get(`/recurring/${id}`);
       return response.data;
     } catch (error) {
       const err = error as AxiosError;
@@ -125,11 +141,22 @@ export const recurringTransactionService = {
     transaction: RecurringTransactionCreate
   ): Promise<RecurringTransaction> => {
     try {
-      const response = await api.post('/api/v1/recurring', transaction);
+      console.log('API Request body:', transaction);
+      const response = await api.post('/recurring', transaction);
       return response.data;
     } catch (error) {
       const err = error as AxiosError;
       console.error('Error creating recurring transaction:', err);
+      
+      // Handle validation errors (422)
+      if (err.response?.status === 422) {
+        console.error('Validation error details:', err.response.data);
+        throw new Error(`Invalid data: ${getErrorDetail(err.response.data)}`);
+      } else if (err.response?.status === 500) {
+        throw new Error('Server error occurred while creating recurring transaction. Please try again or contact support.');
+      } else if (err.response?.status === 400) {
+        throw new Error(`Invalid data: ${getErrorDetail(err.response.data)}`);
+      }
       throw err;
     }
   },
@@ -140,11 +167,19 @@ export const recurringTransactionService = {
     transaction: RecurringTransactionUpdate
   ): Promise<RecurringTransaction> => {
     try {
-      const response = await api.put(`/api/v1/recurring/${id}`, transaction);
+      const response = await api.put(`/recurring/${id}`, transaction);
       return response.data;
     } catch (error) {
       const err = error as AxiosError;
       console.error(`Error updating recurring transaction #${id}:`, err);
+      // Add better error handling with user-friendly messages
+      if (err.response?.status === 500) {
+        throw new Error('Server error occurred while updating recurring transaction. Please try again or contact support.');
+      } else if (err.response?.status === 400) {
+        throw new Error(`Invalid data: ${getErrorDetail(err.response.data)}`);
+      } else if (err.response?.status === 404) {
+        throw new Error('Transaction not found. It may have been deleted.');
+      }
       throw err;
     }
   },
@@ -152,11 +187,17 @@ export const recurringTransactionService = {
   // Delete a recurring transaction
   deleteRecurringTransaction: async (id: number): Promise<boolean> => {
     try {
-      const response = await api.delete(`/api/v1/recurring/${id}`);
+      const response = await api.delete(`/recurring/${id}`);
       return response.data.success;
     } catch (error) {
       const err = error as AxiosError;
       console.error(`Error deleting recurring transaction #${id}:`, err);
+      // Add better error handling with user-friendly messages
+      if (err.response?.status === 500) {
+        throw new Error('Server error occurred while deleting recurring transaction. Please try again or contact support.');
+      } else if (err.response?.status === 404) {
+        throw new Error('Transaction not found. It may have been deleted already.');
+      }
       throw err;
     }
   },
@@ -164,12 +205,18 @@ export const recurringTransactionService = {
   // Process a recurring transaction (update next occurrence)
   processRecurringTransaction: async (id: number): Promise<RecurringTransaction> => {
     try {
-      const response = await api.post(`/api/v1/recurring/${id}/process`);
+      const response = await api.post(`/recurring/${id}/process`);
       return response.data;
     } catch (error) {
       const err = error as AxiosError;
       console.error(`Error processing recurring transaction #${id}:`, err);
+      // Add better error handling with user-friendly messages
+      if (err.response?.status === 500) {
+        throw new Error('Server error occurred while processing recurring transaction. Please try again or contact support.');
+      } else if (err.response?.status === 404) {
+        throw new Error('Transaction not found. It may have been deleted.');
+      }
       throw err;
     }
   }
-}; 
+};

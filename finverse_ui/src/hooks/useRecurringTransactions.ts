@@ -7,6 +7,7 @@ import type {
   RecurringTransactionCreate,
   RecurringTransactionUpdate
 } from '../services/recurringTransactionService';
+import axios from 'axios';
 
 interface UseRecurringTransactionsReturn {
   recurringTransactions: RecurringTransaction[];
@@ -33,7 +34,7 @@ export const useRecurringTransactions = (): UseRecurringTransactionsReturn => {
       const transactions = await recurringTransactionService.getRecurringTransactions();
       setRecurringTransactions(transactions);
     } catch (err) {
-      setError('Failed to fetch recurring transactions');
+      setError('Failed to fetch recurring transactions. Please refresh or try again later.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -47,7 +48,7 @@ export const useRecurringTransactions = (): UseRecurringTransactionsReturn => {
     try {
       return await recurringTransactionService.getRecurringTransaction(id);
     } catch (err) {
-      setError(`Failed to fetch recurring transaction #${id}`);
+      setError(`Failed to fetch recurring transaction #${id}. The transaction may not exist.`);
       console.error(err);
     } finally {
       setLoading(false);
@@ -59,12 +60,34 @@ export const useRecurringTransactions = (): UseRecurringTransactionsReturn => {
     setLoading(true);
     setError(null);
     try {
+      console.log('Sending create request with data:', data);
       const newTransaction = await recurringTransactionService.createRecurringTransaction(data);
       setRecurringTransactions(prev => [...prev, newTransaction]);
       return newTransaction;
     } catch (err) {
-      setError('Failed to create recurring transaction');
-      console.error(err);
+      console.error('Error creating recurring transaction:', err);
+      
+      // Handle 422 validation errors specifically
+      if (axios.isAxiosError(err) && err.response?.status === 422) {
+        const validationErrors = err.response.data?.detail || [];
+        
+        if (Array.isArray(validationErrors)) {
+          // Handle Pydantic validation errors which come as an array
+          const errorMessages = validationErrors.map(error => 
+            `${error.loc.join('.')}: ${error.msg}`
+          ).join('; ');
+          setError(`Validation error: ${errorMessages}`);
+        } else {
+          // Handle string error message
+          setError(`Validation error: ${err.response.data?.detail || 'Invalid data'}`);
+        }
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Failed to create recurring transaction. Please check your inputs and try again.');
+      }
+      
+      throw err; // Re-throw to allow component-level handling
     } finally {
       setLoading(false);
     }
@@ -83,7 +106,12 @@ export const useRecurringTransactions = (): UseRecurringTransactionsReturn => {
       );
       return updatedTransaction;
     } catch (err) {
-      setError(`Failed to update recurring transaction #${id}`);
+      // Display the error message that comes from the service
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(`Failed to update recurring transaction #${id}. Please try again.`);
+      }
       console.error(err);
     } finally {
       setLoading(false);
@@ -103,7 +131,12 @@ export const useRecurringTransactions = (): UseRecurringTransactionsReturn => {
       }
       return success;
     } catch (err) {
-      setError(`Failed to delete recurring transaction #${id}`);
+      // Display the error message that comes from the service
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(`Failed to delete recurring transaction #${id}. Please try again.`);
+      }
       console.error(err);
       return false;
     } finally {
@@ -124,7 +157,12 @@ export const useRecurringTransactions = (): UseRecurringTransactionsReturn => {
       );
       return processedTransaction;
     } catch (err) {
-      setError(`Failed to process recurring transaction #${id}`);
+      // Display the error message that comes from the service
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(`Failed to process recurring transaction #${id}. Please try again.`);
+      }
       console.error(err);
     } finally {
       setLoading(false);
@@ -147,4 +185,4 @@ export const useRecurringTransactions = (): UseRecurringTransactionsReturn => {
     deleteRecurringTransaction,
     processRecurringTransaction
   };
-}; 
+};

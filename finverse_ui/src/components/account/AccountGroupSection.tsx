@@ -1,8 +1,8 @@
 import React from 'react';
 import { Typography, Grid, Box } from '@mui/material';
-import AccountCard from './AccountCard'; // Fixed the import path
+import AccountCard from './AccountCard';
 import { CardSkeleton, EmptyState } from '../shared';
-import type { Account } from '../../types';
+import type { Account } from '../../types/index'; // Fix import path
 import type { SxProps, Theme } from '@mui/material';
 
 interface AccountGroupSectionProps {

@@ -23,8 +23,7 @@ class Category(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    transactions = relationship("Transaction", back_populates="category")
-    recurring_transactions = relationship("RecurringTransaction", back_populates="category")
+    # transactions = relationship("Transaction", back_populates="category")
     
     def to_dict(self):
         """Convert category to dictionary for serialization"""
@@ -36,4 +35,4 @@ class Category(Base):
             "is_default": self.is_default,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
-        } 
+        }

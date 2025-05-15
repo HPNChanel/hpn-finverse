@@ -32,6 +32,7 @@ def create_transaction(
     user_id: int, 
     transaction_type: str, 
     amount: float, 
+    category: Optional[str] = None,  # Changed from category_id to category
     description: Optional[str] = None
 ) -> Transaction:
     """Create a new transaction"""
@@ -40,6 +41,7 @@ def create_transaction(
         user_id=user_id,
         transaction_type=transaction_type,
         amount=amount,
+        category=category,  # Using category string directly
         description=description
     )
     

@@ -63,6 +63,7 @@ async def create_transaction(
         user_id=user_id,
         transaction_type=transaction_data.transaction_type,
         amount=transaction_data.amount,
+        category=transaction_data.category,  # Using category string instead of category_id
         description=transaction_data.description
     )
     
@@ -72,4 +73,4 @@ async def create_transaction(
             detail="Failed to create transaction"
         )
     
-    return transaction 
+    return transaction

@@ -10,7 +10,7 @@ from decimal import Decimal
 
 # Base schema with common fields
 class RecurringTransactionBase(BaseModel):
-    category_id: int
+    category: str = Field(..., max_length=100)  # Replaced category_id with string field
     wallet_id: int
     amount: Decimal = Field(..., gt=0)
     transaction_type: conint(ge=0, le=1) = Field(..., description="0=expense, 1=income")
@@ -55,7 +55,7 @@ class RecurringTransactionCreate(RecurringTransactionBase):
 
 # Schema for updating a recurring transaction
 class RecurringTransactionUpdate(BaseModel):
-    category_id: Optional[int] = None
+    category: Optional[str] = Field(None, max_length=100)  # Updated to use string field
     wallet_id: Optional[int] = None
     amount: Optional[Decimal] = Field(None, gt=0)
     transaction_type: Optional[conint(ge=0, le=1)] = None
@@ -125,4 +125,4 @@ class FrequencyType:
 # Enum-like class for transaction types
 class TransactionType:
     EXPENSE = 0
-    INCOME = 1 
+    INCOME = 1

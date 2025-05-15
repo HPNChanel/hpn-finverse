@@ -11,3 +11,4 @@ export * from './usePageTitle';
 export * from './useAccountTypes';
 export * from './useAccountSummary';
 export * from './useGoals';
+export * from './useRecurringTransactions';

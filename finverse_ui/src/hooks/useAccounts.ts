@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+// Fix import to use Account from the correct location
+import type { Account } from '../types/index';
 import accountService from '../services/accountService';
-import type { Account } from '../utils/importFixes';
 import { useAuth } from '../contexts/AuthContext';
 
 export interface UseAccountsReturn {

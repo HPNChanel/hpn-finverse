@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.recurring_transaction import RecurringTransaction
+from app.models.financial_account import FinancialAccount
+# Removed Category import
 from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
 from app.schemas.recurring_transaction import FrequencyType
 
@@ -45,6 +47,21 @@ class RecurringTransactionService:
     ) -> RecurringTransaction:
         """Create a new recurring transaction"""
         try:
+            # Validate wallet ownership
+            wallet = db.query(FinancialAccount).filter_by(id=transaction_data.wallet_id).first()
+            if not wallet:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Wallet not found."
+                )
+            if wallet.user_id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Wallet does not belong to the current user."
+                )
+            
+            # Removed category validation logic
+            
             # Calculate next occurrence based on start date and frequency
             next_occurrence = RecurringTransactionService._calculate_next_occurrence(
                 transaction_data.start_date,
@@ -54,7 +71,7 @@ class RecurringTransactionService:
             
             transaction = RecurringTransaction(
                 user_id=user_id,
-                category_id=transaction_data.category_id,
+                category=transaction_data.category,  # Use category string directly
                 wallet_id=transaction_data.wallet_id,
                 amount=transaction_data.amount,
                 transaction_type=transaction_data.transaction_type,
@@ -72,6 +89,9 @@ class RecurringTransactionService:
             db.refresh(transaction)
             return transaction
             
+        except HTTPException as e:
+            # Re-raise HTTP exceptions
+            raise e
         except SQLAlchemyError as e:
             db.rollback()
             raise HTTPException(
@@ -275,4 +295,4 @@ class RecurringTransactionService:
             return dt.date(year, 1, 1) + dt.timedelta(days=day_of_year - 1)
         except ValueError:
             # Handle Feb 29 in non-leap years
-            return dt.date(year, 12, 31) 
+            return dt.date(year, 12, 31)

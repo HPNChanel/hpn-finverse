@@ -21,7 +21,8 @@ import {
   DialogContentText,
   DialogActions,
   CircularProgress,
-  Alert
+  Alert,
+  Snackbar
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
@@ -82,6 +83,10 @@ const RecurringTransactionsPage = () => {
   const [isHelpDialogOpen, setIsHelpDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<RecurringTransaction | undefined>(undefined);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Custom hook for recurring transactions
   const { 
@@ -108,13 +113,37 @@ const RecurringTransactionsPage = () => {
   // Handle form submission
   const handleFormSubmit = async (data: RecurringTransactionCreate | RecurringTransactionUpdate) => {
     try {
+      // Set local loading state
+      setIsSubmitting(true);
+      
       if (selectedTransaction) {
         await updateRecurringTransaction(selectedTransaction.id, data as RecurringTransactionUpdate);
+        setIsFormOpen(false);
+        setSnackbarMessage('Recurring transaction updated successfully!');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
       } else {
         await createRecurringTransaction(data as RecurringTransactionCreate);
+        setIsFormOpen(false);
+        setSnackbarMessage('Recurring transaction created successfully!');
+        setSnackbarSeverity('success');
+        setSnackbarOpen(true);
       }
     } catch (err) {
       console.error('Error saving transaction:', err);
+      
+      // Show error message to user
+      if (err instanceof Error) {
+        setSnackbarMessage(err.message);
+      } else {
+        setSnackbarMessage('An error occurred while saving the transaction');
+      }
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      
+      // Keep form open on error
+    } finally {
+      setIsSubmitting(false);
     }
   };
   
@@ -335,8 +364,23 @@ const RecurringTransactionsPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* Snackbar for success/error messages */}
+      <Snackbar 
+        open={snackbarOpen} 
+        autoHideDuration={6000} 
+        onClose={() => setSnackbarOpen(false)}
+      >
+        <Alert 
+          onClose={() => setSnackbarOpen(false)} 
+          severity={snackbarSeverity}
+          variant="filled"
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 };
 
-export default RecurringTransactionsPage; 
+export default RecurringTransactionsPage;

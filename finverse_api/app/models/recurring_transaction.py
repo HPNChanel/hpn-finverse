@@ -3,7 +3,7 @@ Recurring Transaction model for FinVerse API
 """
 
 from datetime import datetime, date
-from sqlalchemy import Column, Integer, Numeric, Text, Date, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, Numeric, Text, Date, DateTime, ForeignKey, Boolean, String
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -16,7 +16,7 @@ class RecurringTransaction(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
+    category = Column(String(100), nullable=False)  # New string field replacing category_id
     wallet_id = Column(Integer, ForeignKey("financial_accounts.id"), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
     transaction_type = Column(Integer, nullable=False)  # 0=expense, 1=income
@@ -33,4 +33,3 @@ class RecurringTransaction(Base):
     # Relationships
     user = relationship("User", back_populates="recurring_transactions")
     wallet = relationship("FinancialAccount", foreign_keys=[wallet_id])
-    category = relationship("Category", foreign_keys=[category_id]) 

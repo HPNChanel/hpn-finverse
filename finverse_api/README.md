@@ -48,13 +48,20 @@ A FastAPI backend for a financial dApp with a virtual account system.
 - `PATCH /budget/update_spending`: Update spending of a budget
 - `GET /budget/list/{account_id}`: List all budget plans per account
 
+### Transactions
+
+- `POST /transactions/create`: Create a new transaction (now accepts `category` as string field)
+- `GET /transactions/history`: Get transaction history for the current user
+- `GET /transactions/{transaction_id}`: Get details of a specific transaction
+
 ## Database Structure
 
 The virtual account system uses the following database tables:
 - `financial_accounts`: Stores virtual account information
 - `internal_transactions`: Records transfers between accounts
 - `budget_plans`: Tracks spending limits and categories
+- `transactions`: Records all financial transactions (now using direct category string)
 
 ## Notes
 
-This implementation uses MySQL for data storage, with SQLAlchemy as the ORM. 
+This implementation uses MySQL for data storage, with SQLAlchemy as the ORM.
