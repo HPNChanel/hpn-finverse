@@ -4,3 +4,5 @@ export { default as CustomSnackbar } from './CustomSnackbar';
 export { default as LoadingOverlay } from './LoadingOverlay';
 export { default as GoalCard } from './GoalCard';
 export { default as GoalForm } from './GoalForm';
+export { default as RecurringTransactionForm } from './RecurringTransactionForm';
+export { default as RecurringTransactionCard } from './RecurringTransactionCard';

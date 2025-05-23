@@ -1,5 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
-import { categoryService, Category } from '../services/categoryService';
+
+// Define a simple Category interface
+interface Category {
+  id: string;
+  name: string;
+  is_expense: boolean;
+}
+
+// Create a mock service since the original was removed
+const categoryService = {
+  getCategories: async (): Promise<Category[]> => {
+    return [
+      { id: 'food', name: 'Food', is_expense: true },
+      { id: 'housing', name: 'Housing', is_expense: true },
+      { id: 'salary', name: 'Salary', is_expense: false },
+      // Add more as needed
+    ];
+  }
+};
 
 interface UseCategoriesReturn {
   categories: Category[];
@@ -47,4 +65,4 @@ export const useCategories = (): UseCategoriesReturn => {
     error,
     fetchCategories
   };
-}; 
+};

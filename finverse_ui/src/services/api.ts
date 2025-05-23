@@ -1,23 +1,46 @@
 import axios from 'axios';
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 
-// Restore original baseURL to fix 404 errors
+// Ensure baseURL is correctly defined
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
 // Create an Axios instance with default configuration
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000, // Increased from 10000ms to 15000ms (15 seconds)
+  timeout: 15000, // 15 seconds
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// Check if path is unauthenticated (doesn't require token)
+const isUnauthenticatedPath = (url: string | undefined): boolean => {
+  if (!url) return false;
+  
+  // Define routes that don't need authentication
+  const unauthenticatedRoutes = [
+    '/auth/login',
+    '/auth/register',
+    '/auth/validate',
+    '/auth/forgot-password',
+    '/auth/reset-password',
+  ];
+  
+  return unauthenticatedRoutes.some(route => url.includes(route));
+};
 
 // Request interceptor to add authorization headers
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // Get token from localStorage
     const token = localStorage.getItem('token');
+    
+    // Check if this is an authenticated route and token is missing
+    if (!token && !isUnauthenticatedPath(config.url)) {
+      // For non-auth routes without a token, cancel the request
+      // This prevents unnecessary 401s when user isn't logged in
+      return Promise.reject(new Error('Authentication required - request canceled'));
+    }
     
     // If token exists, add it to the headers
     if (token && config.headers) {
@@ -36,42 +59,11 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle global error cases here (e.g., unauthorized, server error)
-    if (error.response) {
-      // Log detailed API errors for debugging
-      console.error('API Error:', {
-        url: error.config?.url,
-        status: error.response?.status,
-        data: error.response?.data
-      });
-      
-      // Server responded with a status code outside the 2xx range
-      if (error.response.status === 401) {
-        // Authentication error - just remove token
-        // Don't automatically redirect to login to prevent disruption
-        // during API operations
-        localStorage.removeItem('token');
-        
-        // Add a flag to the error to indicate auth failure
-        error.isAuthError = true;
-      } else if (error.response.status === 403) {
-        // Forbidden - user doesn't have permission
-        console.error('Permission denied');
-      } else if (error.response.status === 500) {
-        // Server error
-        console.error('Server error occurred');
-      }
-    } else if (error.code === 'ECONNABORTED') {
-      // Request timeout
-      console.error('Request timeout - server took too long to respond');
-    } else if (error.request) {
-      // Request was made but no response received (network error)
-      console.error('Network Error - No response received:', error.request);
-    } else {
-      // Something else triggered an error
-      console.error('Request Error:', error.message);
+    // Check if it's an authentication error
+    if (error?.response?.status === 401) {
+      // Could handle token refresh or redirect to login
+      console.error('Authentication error:', error);
     }
-    
     return Promise.reject(error);
   }
 );

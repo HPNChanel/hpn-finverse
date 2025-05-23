@@ -21,11 +21,14 @@ class BudgetPlanService:
         # Verify account exists
         account = FinancialAccountService.get_account(db, budget_data.account_id)
         
+        # Create budget plan with the correct fields from the schema
         budget_plan = BudgetPlan(
             account_id=budget_data.account_id,
+            user_id=account.user_id,  # Get user_id from the account
+            name=budget_data.name, 
             category=budget_data.category,
             limit_amount=budget_data.limit_amount,
-            spent_amount=0,  # Start with zero spent
+            spent_amount=0.0,  # Start with zero spent
             status="active"
         )
         
@@ -73,4 +76,4 @@ class BudgetPlanService:
         db.commit()
         db.refresh(budget_plan)
         
-        return budget_plan 
+        return budget_plan

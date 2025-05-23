@@ -11,18 +11,14 @@ import {
   CircularProgress
 } from '@mui/material';
 import { Add as AddIcon } from '@mui/icons-material';
-import PageLayout from '../../components/layouts/PageLayout';
 import GoalCard from '../../components/shared/GoalCard';
 import GoalForm from '../../components/shared/GoalForm';
-import { useGoals, usePageTitle } from '../../hooks';
+import { useGoals } from '../../hooks';
 import type { FinancialGoal } from '../../utils/importFixes';
 import type { CreateGoalRequest, UpdateGoalRequest } from '../../services/goalService';
 import { EmptyState } from '../../components/shared';
 
 const Goals: React.FC = () => {
-  // Set page title
-  usePageTitle('Financial Goals');
-
   // States for managing UI
   const [formOpen, setFormOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<FinancialGoal | undefined>(undefined);
@@ -35,7 +31,7 @@ const Goals: React.FC = () => {
   const [deleteConfirmGoalId, setDeleteConfirmGoalId] = useState<number | null>(null);
 
   // Get goals data and operations from custom hook
-  const { goals, loading, error, fetchGoals, createGoal, updateGoal, deleteGoal, getGoalById } = useGoals();
+  const { goals, loading, error, createGoal, updateGoal, deleteGoal, getGoalById } = useGoals();
 
   // Handle creating/updating a goal
   const handleSubmitGoal = async (data: CreateGoalRequest | UpdateGoalRequest) => {
@@ -104,7 +100,7 @@ const Goals: React.FC = () => {
   const cancelledGoals = goals.filter(goal => goal.status === 3);
 
   return (
-    <PageLayout title="Financial Goals">
+    <Box sx={{ p: 3 }}>
       {/* Error alert if there's an issue fetching goals */}
       {error && (
         <Alert severity="error" sx={{ mb: 4 }}>
@@ -253,21 +249,18 @@ const Goals: React.FC = () => {
         </Snackbar>
       )}
 
-      {/* Snackbar for notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
+      {/* Snackbar for general feedback */}
+      <Snackbar 
+        open={snackbar.open} 
+        autoHideDuration={6000} 
         onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
-          severity={snackbar.severity}
-        >
+        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </PageLayout>
+    </Box>
   );
 };
 

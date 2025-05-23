@@ -16,7 +16,7 @@ class BudgetPlanBase(BaseModel):
 
 class BudgetPlanCreate(BudgetPlanBase):
     """Schema for creating a budget plan"""
-    pass
+    name: Optional[str] = Field("Budget Plan", min_length=1, max_length=100)
 
 
 class BudgetPlanUpdateSpending(BaseModel):
@@ -30,6 +30,8 @@ class BudgetPlanResponse(BudgetPlanBase):
     spent_amount: float
     status: str
     created_at: datetime
+    name: str
+    is_active: bool
     
     class Config:
         orm_mode = True

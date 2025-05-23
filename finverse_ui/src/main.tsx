@@ -1,22 +1,13 @@
 // Polyfills need to come first
 import { Buffer } from 'buffer';
 import process from 'process';
-import * as util from 'util';
+import utilPolyfill from './polyfills/util-polyfill';
 
 // Make Node.js globals available to browser environment
 window.Buffer = Buffer;
 window.process = process;
 window.global = window;
-window.util = util;
-
-// Manually polyfill util.debuglog and util.inspect to fix crypto-browserify errors
-util.debuglog = util.debuglog || function(section) {
-  return function() { /* noop */ };
-};
-
-util.inspect = util.inspect || function(obj, options) {
-  return typeof obj === 'undefined' ? 'undefined' : JSON.stringify(obj);
-};
+window.util = utilPolyfill;
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';

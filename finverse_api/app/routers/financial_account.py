@@ -16,12 +16,6 @@ from app.schemas.financial_account import (
 )
 from app.core.auth import get_current_user
 from app.services.financial_account_service import FinancialAccountService
-from app.schemas.internal_transaction import (
-    InternalTransactionCreate,
-    InternalTransactionResponse,
-    InternalTransactionList
-)
-from app.services.internal_transaction_service import InternalTransactionService
 
 
 router = APIRouter(
@@ -93,6 +87,9 @@ async def create_account(
                 account.icon = account.icon or default_type.icon
                 account.color = account.color or default_type.color
         
+        # Log received data for debugging
+        print(f"Creating account with data: {account.dict()}")
+        
         # Use service to create account
         account_service = FinancialAccountService()
         db_account = account_service.create_account(db, account, current_user.id)
@@ -113,6 +110,15 @@ async def create_account(
         }
         
         return account_dict
+    except HTTPException:
+        # Re-raise HTTP exceptions directly
+        raise
+    except ValueError as ve:
+        # Handle value errors (often from validation)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
     except Exception as e:
         # Log the error
         print(f"Error creating account: {str(e)}")

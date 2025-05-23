@@ -3,7 +3,7 @@ User model for FinVerse API
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, BigInteger, String, DateTime, Boolean
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -14,7 +14,7 @@ class User(Base):
     
     __tablename__ = "users"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     password = Column(String(100), nullable=False)  # Note: In a real app, this would be hashed
     name = Column(String(255), nullable=True)  # Add name column
@@ -27,7 +27,6 @@ class User(Base):
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
     financial_accounts = relationship("FinancialAccount", back_populates="user", cascade="all, delete-orphan")
     financial_goals = relationship("FinancialGoal", back_populates="user", cascade="all, delete-orphan")
-    recurring_transactions = relationship("RecurringTransaction", back_populates="user", cascade="all, delete-orphan")
     
     def to_dict(self):
         """Convert user to dictionary for serialization"""

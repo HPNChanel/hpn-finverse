@@ -16,8 +16,7 @@ from app.db.session import Base
 # Import all models to ensure they are registered with Base.metadata
 # This is important for Alembic to detect all model changes
 from app.models import user, staking, transaction, financial_account
-from app.models import internal_transaction, budget_plan, financial_goal
-from app.models import recurring_transaction, category
+from app.models import budget_plan, financial_goal
 
 # Import settings to get database URL
 from app.db.session import SQLALCHEMY_DATABASE_URL

@@ -33,7 +33,6 @@ import {
   FrequencyTypeLabels, 
   TransactionType,
   TransactionTypeLabels,
-  formatFrequency
 } from '../../services/recurringTransactionService';
 import type { 
   RecurringTransaction,
@@ -53,7 +52,7 @@ const formSchema = z.object({
   frequency_value: z.number().int(),
   start_date: z.date(),
   end_date: z.date().optional().nullable(),
-  is_active: z.boolean().default(true),
+  is_active: z.boolean(),
 });
 
 type FormSchemaType = z.infer<typeof formSchema>;
@@ -82,19 +81,19 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
   const [nextOccurrence, setNextOccurrence] = useState<string | null>(null);
   
   // Initialize form with default values or existing transaction data
-  const { control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormSchemaType>({
+  const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     defaultValues: transaction ? {
-      category_id: transaction.category_id.toString(),
-      wallet_id: transaction.wallet_id,
-      amount: Number(transaction.amount),
-      transaction_type: transaction.transaction_type,
+      category_id: transaction.category_id?.toString() ?? '',
+      wallet_id: transaction.wallet_id ?? (accounts && accounts.length > 0 ? accounts[0].id : 0),
+      amount: Number(transaction.amount ?? 0),
+      transaction_type: transaction.transaction_type ?? TransactionType.EXPENSE,
       description: transaction.description || '',
-      frequency_type: transaction.frequency_type,
-      frequency_value: transaction.frequency_value,
-      start_date: new Date(transaction.start_date),
+      frequency_type: transaction.frequency_type ?? FrequencyType.MONTHLY,
+      frequency_value: transaction.frequency_value ?? 1,
+      start_date: transaction.start_date ? new Date(transaction.start_date) : new Date(),
       end_date: transaction.end_date ? new Date(transaction.end_date) : null,
-      is_active: transaction.is_active,
+      is_active: transaction.is_active ?? true,
     } : {
       category_id: '',
       wallet_id: accounts && accounts.length > 0 ? accounts[0].id : 0,
@@ -102,7 +101,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
       transaction_type: TransactionType.EXPENSE,
       description: '',
       frequency_type: FrequencyType.MONTHLY,
-      frequency_value: 1, // Default to 1st day of month
+      frequency_value: 1,
       start_date: new Date(),
       end_date: null,
       is_active: true,
@@ -131,27 +130,31 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
         let nextDate: Date;
         
         switch (frequencyType) {
-          case FrequencyType.DAILY:
+          case FrequencyType.DAILY: {
             nextDate = new Date(dateStr);
             nextDate.setDate(nextDate.getDate() + 1);
             break;
-          case FrequencyType.WEEKLY:
+          }
+          case FrequencyType.WEEKLY: {
             nextDate = new Date(dateStr);
             const day = nextDate.getDay();
             const daysToAdd = (frequencyValue - day + 7) % 7;
             nextDate.setDate(nextDate.getDate() + (daysToAdd === 0 ? 7 : daysToAdd));
             break;
-          case FrequencyType.MONTHLY:
+          }
+          case FrequencyType.MONTHLY: {
             nextDate = new Date(dateStr);
             nextDate.setMonth(nextDate.getMonth() + 1);
             // Handle month length issues
             const desiredDay = Math.min(frequencyValue, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate());
             nextDate.setDate(desiredDay);
             break;
-          case FrequencyType.YEARLY:
+          }
+          case FrequencyType.YEARLY: {
             nextDate = new Date(dateStr);
             nextDate.setFullYear(nextDate.getFullYear() + 1);
             break;
+          }
           default:
             nextDate = new Date(dateStr);
         }
@@ -160,6 +163,7 @@ const RecurringTransactionForm: React.FC<RecurringTransactionFormProps> = ({
           year: 'numeric', month: 'long', day: 'numeric'
         }));
       } catch (error) {
+        console.error('Error calculating next occurrence:', error);
         setNextOccurrence(null);
       }
     }

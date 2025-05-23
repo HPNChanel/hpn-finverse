@@ -6,7 +6,7 @@ from app.db.session import Base
 
 # Import all models here
 from app.models.user import User
-from app.models.staking import Stake, StakingAccount
+from app.models.staking import Stake
 from app.models.transaction import Transaction
 from app.models.financial_account import FinancialAccount
 from app.models.internal_transaction import InternalTransaction

@@ -17,9 +17,8 @@ import {
 } from '@mui/material';
 import { Add as AddIcon } from '@mui/icons-material';
 import BudgetCard from '../../components/budget/BudgetCard';
-import { useAccounts, useBudgets, useFormDialog, useSnackbar, usePageTitle } from '../../hooks';
+import { useAccounts, useBudgets, useFormDialog, useSnackbar } from '../../hooks';
 import { EmptyState, CardSkeleton, CustomSnackbar, LoadingOverlay } from '../../components/shared';
-import PageLayout from '../../components/layouts/PageLayout';
 import type { CreateBudgetData } from '../../services/budgetService';
 import type { SxProps, Theme } from '@mui/material';
 
@@ -39,14 +38,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ children, value, index, sx, ...othe
       aria-labelledby={`budget-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
+      {value === index && <Box sx={{ py: 3, ...sx }}>{children}</Box>}
     </div>
   );
 };
 
 const Budgets: React.FC = () => {
-  usePageTitle('Budget Planning');
-  
   // Hooks
   const { accounts, loading: accountsLoading, error: accountsError } = useAccounts();
   const [selectedAccount, setSelectedAccount] = useState<number | null>(null);
@@ -151,7 +148,12 @@ const Budgets: React.FC = () => {
   ) : undefined;
 
   return (
-    <PageLayout title="Budget Planning" action={actionButton}>
+    <Box sx={{ p: 3 }}>
+      {actionButton && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+          {actionButton}
+        </Box>
+      )}
       {error && (
         <Alert severity="error" sx={{ mb: 4 }}>
           {error}
@@ -299,27 +301,20 @@ const Budgets: React.FC = () => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDialog} color="inherit" disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleCreateBudget} 
-            color="primary" 
-            disabled={isSubmitting}
-          >
+          <Button onClick={closeDialog} disabled={isSubmitting}>Cancel</Button>
+          <Button onClick={handleCreateBudget} disabled={isSubmitting} variant="contained">
             {isSubmitting ? 'Creating...' : 'Create'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar for notifications */}
       <CustomSnackbar
         open={snackbar.open}
         message={snackbar.message}
         severity={snackbar.severity}
         onClose={hideSnackbar}
       />
-    </PageLayout>
+    </Box>
   );
 };
 

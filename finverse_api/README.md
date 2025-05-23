@@ -50,7 +50,7 @@ A FastAPI backend for a financial dApp with a virtual account system.
 
 ### Transactions
 
-- `POST /transactions/create`: Create a new transaction (now accepts `category` as string field)
+- `POST /transactions/create`: Create a new transaction (income or expense)
 - `GET /transactions/history`: Get transaction history for the current user
 - `GET /transactions/{transaction_id}`: Get details of a specific transaction
 

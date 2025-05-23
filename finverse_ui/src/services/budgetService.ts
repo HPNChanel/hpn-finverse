@@ -5,7 +5,8 @@ import { handleErrorResponse } from '../utils/importFixes';
 export interface CreateBudgetData {
   account_id: number;
   category: string;
-  limit_amount: number;
+  limit_amount: number;  // Ensure this field name matches the backend
+  name?: string;  // Optional name field
 }
 
 export interface UpdateBudgetSpendingData {
@@ -31,6 +32,8 @@ const budgetService = {
    */
   createBudget: async (data: CreateBudgetData): Promise<BudgetPlan> => {
     try {
+      // Log the payload for debugging
+      console.log('Creating budget with payload:', JSON.stringify(data, null, 2));
       const response = await api.post<BudgetPlan>('/budget/create', data);
       return response.data;
     } catch (error) {

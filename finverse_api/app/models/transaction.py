@@ -4,19 +4,16 @@ Transaction model for FinVerse API
 
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Column, Integer, Float, String, DateTime, ForeignKey
+from sqlalchemy import Column, BigInteger, DECIMAL, String, DateTime, ForeignKey, SMALLINT, Date
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
 
 
-class TransactionType(str, Enum):
+class TransactionType(int, Enum):
     """Enum for transaction types"""
-    STAKE = "STAKE"
-    UNSTAKE = "UNSTAKE"
-    TRANSFER = "TRANSFER"
-    DEPOSIT = "DEPOSIT"
-    WITHDRAWAL = "WITHDRAWAL"
+    EXPENSE = 0
+    INCOME = 1
 
 
 class Transaction(Base):
@@ -24,26 +21,30 @@ class Transaction(Base):
     
     __tablename__ = "transactions"
     
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    category = Column(String(100), nullable=True)  # Changed from category_id to category string
-    amount = Column(Float, nullable=False)
-    transaction_type = Column(String(20), nullable=False)
+    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    wallet_id = Column(BigInteger, ForeignKey("financial_accounts.id", ondelete="CASCADE"), nullable=False)
+    amount = Column(DECIMAL(15, 2), nullable=False)
+    transaction_type = Column(SMALLINT, nullable=False)  # 1 = income, 0 = expense
     description = Column(String(255), nullable=True)
+    transaction_date = Column(Date, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     user = relationship("User", back_populates="transactions")
-    # Removed category relationship
+    wallet = relationship("FinancialAccount", back_populates="transactions")
     
     def to_dict(self):
         """Convert transaction to dictionary for serialization"""
         return {
             "id": self.id,
             "user_id": self.user_id,
-            "category": self.category,  # Updated from category_id to category
-            "amount": self.amount,
+            "wallet_id": self.wallet_id,
+            "amount": float(self.amount),
             "transaction_type": self.transaction_type,
             "description": self.description,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "transaction_date": self.transaction_date.isoformat() if self.transaction_date else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

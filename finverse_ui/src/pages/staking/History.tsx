@@ -1,181 +1,106 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Alert,
-  Chip,
-  TablePagination,
-  Button,
-  Typography
-} from '@mui/material';
-import {
-  TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon,
-} from '@mui/icons-material';
-import { LoadingOverlay, EmptyState } from '../../components/shared';
-import transactionService from '../../services/transactionService';
-import type { Transaction, TransactionType } from '../../services/transactionService';
-import { usePageTitle } from '../../hooks';
-import PageLayout from '../../components/layouts/PageLayout';
-import { getErrorMessage } from '../../utils/importFixes';
+import React, { useState, useMemo } from 'react';
+import { Paper, Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, Alert, Chip, Tooltip, IconButton } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
+import { Visibility as VisibilityIcon } from '@mui/icons-material';
+import { useTransactionHistory, usePageTitle } from '../../hooks';
+import type { Transaction } from '../../services/transactionService';
+import { formatDate, formatCurrency } from '../../utils/formatters';
+import { LoadingOverlay } from '../../components/shared';
 
-const History: React.FC = () => {
-  // Set page title
-  usePageTitle('Transaction History');
+const StakingHistoryPage: React.FC = () => {
+  usePageTitle('Staking Transaction History');
+  const { transactions, loading, error } = useTransactionHistory();
 
-  const [transactions, setTransactions] = useState<Transaction[] | undefined>(undefined);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string>('');
-  const [page, setPage] = useState<number>(0);
-  const [rowsPerPage, setRowsPerPage] = useState<number>(10);
-  
-  // Fetch transaction history
-  const fetchTransactions = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await transactionService.getHistory();
-      setTransactions(data);
-    } catch (err) {
-      setError('Failed to fetch transaction history. Please try again later.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  
-  useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
-  
-  // Handle page change
-  const handleChangePage = (_: unknown, newPage: number) => {
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
   };
-  
-  // Handle rows per page change
+
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-  
-  // Format date
-  const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
-  };
-  
-  // Get transaction status chip
-  const getTransactionChip = (type: TransactionType) => {
-    switch (type) {
-      case 'STAKE':
-        return (
-          <Chip
-            icon={<TrendingUpIcon fontSize="small" />}
-            label="Stake"
-            color="primary"
-            size="small"
-          />
-        );
-      case 'UNSTAKE':
-        return (
-          <Chip
-            icon={<TrendingDownIcon fontSize="small" />}
-            label="Unstake"
-            color="secondary"
-            size="small"
-          />
-        );
-      default:
-        return <Chip label={type} size="small" />;
-    }
-  };
-  
-  // Loading state
+
+  const paginatedTransactions = useMemo(() => {
+    if (!transactions) return [];
+    return transactions.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  }, [transactions, page, rowsPerPage]);
+
   if (loading) {
+    return <LoadingOverlay />;
+  }
+
+  if (error) {
+    return <Alert severity="error" sx={{m: 2}}>{String(error)}</Alert>;
+  }
+
+  if (!transactions || transactions.length === 0) {
     return (
-      <PageLayout title="Transaction History">
-        <LoadingOverlay />
-      </PageLayout>
+      <>
+        <Box textAlign="center" sx={{ py: 5 }}>
+          <Typography variant="h6">No Staking Transactions Found</Typography>
+          <Typography color="text.secondary">
+            There are no staking-related transactions recorded yet.
+          </Typography>
+        </Box>
+      </>
     );
   }
 
-  // Error state
-  if (error) {
-    return (
-      <PageLayout title="Transaction History">
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-        <Button 
-          variant="contained"
-          onClick={() => fetchTransactions()}
-          sx={{ mt: 2 }}
-        >
-          Try Again
-        </Button>
-      </PageLayout>
-    );
-  }
-  
-  // Empty state
-  if (!transactions || transactions.length === 0) {
-    return (
-      <PageLayout title="Transaction History">
-        <EmptyState
-          title="No transactions found"
-          description="Your transaction history will appear here once you start staking or unstaking tokens."
-          sx={{ p: 4, textAlign: 'center' }}
-        />
-      </PageLayout>
-    );
-  }
-  
-  // Pagination
-  const paginatedTransactions = transactions.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-  
   return (
-    <PageLayout title="Transaction History">
-      <Paper>
+    <>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3 }}>
+        <Typography variant="h5" component="h2" gutterBottom>
+          Staking Transaction Log
+        </Typography>
         <TableContainer>
-          <Table sx={{ minWidth: 650 }}>
+          <Table stickyHeader aria-label="staking transaction history table">
             <TableHead>
               <TableRow>
-                <TableCell>Transaction ID</TableCell>
+                <TableCell>Date</TableCell>
                 <TableCell>Type</TableCell>
-                <TableCell>Amount</TableCell>
-                <TableCell>Date & Time</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell align="right">Amount (FVT)</TableCell>
+                <TableCell align="center">Status</TableCell>
+                <TableCell align="center">Details</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {paginatedTransactions.map((transaction) => (
-                <TableRow key={transaction.id} hover>
-                  <TableCell component="th" scope="row" sx={{ fontFamily: 'monospace' }}>
-                    {transaction.id}
-                  </TableCell>
-                  <TableCell>{getTransactionChip(transaction.transaction_type)}</TableCell>
+              {paginatedTransactions.map((tx: Transaction) => (
+                <TableRow hover key={tx.id}>
+                  <TableCell>{formatDate(tx.timestamp)}</TableCell>
                   <TableCell>
-                    <Typography
-                      variant="body2"
-                      color={transaction.transaction_type === 'STAKE' ? 'success.main' : 'error.main'}
-                      fontWeight="medium"
-                    >
-                      {transaction.transaction_type === 'STAKE' ? '+' : '-'}
-                      {transaction.amount.toFixed(4)} FVT
-                    </Typography>
+                    <Chip 
+                        label={tx.transaction_type}
+                        size="small"
+                        color={tx.transaction_type === 'STAKE' ? 'success' : tx.transaction_type === 'UNSTAKE' ? 'warning' : 'default'}
+                    />
                   </TableCell>
-                  <TableCell>{formatDate(transaction.timestamp)}</TableCell>
+                  <TableCell>{tx.description || 'N/A'}</TableCell>
+                  <TableCell align="right">{formatCurrency(tx.amount, 'FVT')}</TableCell>
+                  <TableCell align="center">
+                    <Chip 
+                        label={'Completed'} 
+                        size="small"
+                        color={'success'}
+                    />
+                  </TableCell>
+                  <TableCell align="center">
+                    <Tooltip title="View Details">
+                      <IconButton component={RouterLink} to={`/transactions/${tx.id}`} size="small">
+                        <VisibilityIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </TableContainer>
         <TablePagination
-          rowsPerPageOptions={[5, 10, 25]}
+          rowsPerPageOptions={[10, 25, 50, 100]}
           component="div"
           count={transactions.length}
           rowsPerPage={rowsPerPage}
@@ -184,8 +109,8 @@ const History: React.FC = () => {
           onRowsPerPageChange={handleChangeRowsPerPage}
         />
       </Paper>
-    </PageLayout>
+    </>
   );
 };
 
-export default History;
+export default StakingHistoryPage;

@@ -1,33 +1,73 @@
 import React from 'react';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Backdrop, CircularProgress, Typography, Box, useTheme, alpha } from '@mui/material';
 
 interface LoadingOverlayProps {
+  open: boolean;
   message?: string;
-  fullHeight?: boolean;
+  opacity?: number;
+  withBackdrop?: boolean;
+  size?: 'small' | 'medium' | 'large';
+  position?: 'absolute' | 'fixed';
+  zIndex?: number;
 }
 
 const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
-  message = 'Loading...',
-  fullHeight = false,
+  open,
+  message,
+  opacity = 0.7,
+  withBackdrop = true,
+  size = 'medium',
+  position = 'absolute',
+  zIndex = 1300,
 }) => {
+  const theme = useTheme();
+  
+  const sizeMap = {
+    small: 24,
+    medium: 40,
+    large: 56
+  };
+  
+  const progressSize = sizeMap[size];
+
+  if (!open) return null;
+
   return (
-    <Box
-      display="flex"
-      flexDirection="column"
-      justifyContent="center"
-      alignItems="center"
+    <Backdrop
+      open={open}
       sx={{
-        height: fullHeight ? '100vh' : '200px',
-        width: '100%',
+        position,
+        zIndex,
+        bgcolor: withBackdrop ? alpha(theme.palette.background.paper, opacity) : 'transparent',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
-      <CircularProgress size={40} />
+      <CircularProgress
+        size={progressSize}
+        thickness={4}
+        color="primary"
+        sx={{ mb: message ? 2 : 0 }}
+      />
+      
       {message && (
-        <Typography variant="body1" sx={{ mt: 2 }}>
-          {message}
-        </Typography>
+        <Box
+          sx={{
+            bgcolor: alpha(theme.palette.background.paper, 0.8),
+            borderRadius: theme.shape.borderRadius,
+            p: 2,
+            maxWidth: '80%',
+            textAlign: 'center',
+          }}
+        >
+          <Typography variant="body2" color="text.primary">
+            {message}
+          </Typography>
+        </Box>
       )}
-    </Box>
+    </Backdrop>
   );
 };
 

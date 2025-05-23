@@ -3,7 +3,7 @@ Financial Account model for FinVerse API
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Text
+from sqlalchemy import Column, BigInteger, String, Float, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -15,8 +15,8 @@ class FinancialAccount(Base):
     
     __tablename__ = "financial_accounts"
     
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)
     type = Column(String(50), nullable=False)  # e.g., "wallet", "saving", "goal", "investment"
     balance = Column(Float, default=0.0, nullable=False)
@@ -31,18 +31,15 @@ class FinancialAccount(Base):
     
     # Relationships
     user = relationship("User", back_populates="financial_accounts")
-    transactions_from = relationship(
-        "InternalTransaction", 
-        foreign_keys="InternalTransaction.from_account_id",
-        back_populates="from_account", 
+    
+    # Transactions relationship
+    transactions = relationship(
+        "Transaction", 
+        foreign_keys="Transaction.wallet_id", 
+        back_populates="wallet", 
         cascade="all, delete-orphan"
     )
-    transactions_to = relationship(
-        "InternalTransaction", 
-        foreign_keys="InternalTransaction.to_account_id",
-        back_populates="to_account", 
-        cascade="all, delete-orphan"
-    )
+    
     budget_plans = relationship("BudgetPlan", back_populates="account", cascade="all, delete-orphan")
     
     def to_dict(self):

@@ -7,8 +7,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.schemas.staking import (
-    StakeRequest, StakeStatus, StakingAccountCreate, 
-    StakingAccountResponse, StakingAccountList,
+    StakeBase, StakeCreate, StakeResponse, StakeStatus, 
+    StakingAccountCreate, StakingAccountResponse, StakingAccountList,
     StakingProfileResponse, StakingProfileList
 )
 from app.services import staking_service, user_service
@@ -23,7 +23,7 @@ router = APIRouter(
 
 @router.post("/stake", response_model=StakeStatus, status_code=status.HTTP_200_OK)
 async def stake(
-    stake_data: StakeRequest, 
+    stake_data: StakeBase, 
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -47,7 +47,7 @@ async def stake(
 
 @router.post("/unstake", response_model=StakeStatus, status_code=status.HTTP_200_OK)
 async def unstake(
-    stake_data: StakeRequest, 
+    stake_data: StakeBase, 
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -108,9 +108,9 @@ async def get_staking_accounts(
     user_id = current_user.id
     
     result = staking_service.get_staking_profile(db, user_id)
-    if not result or "accounts" not in result or not result["accounts"]:
+    if not result or "stakes" not in result or not result["stakes"]:
         # If no accounts found, return empty list
-        return {"accounts": []}
+        return {"stakes": []}
     
     return result
 
@@ -156,7 +156,7 @@ async def create_staking_account(
 @router.post("/stake/{account_id}", response_model=StakeStatus, status_code=status.HTTP_200_OK)
 async def stake_to_account(
     account_id: int,
-    stake_data: StakeRequest,
+    stake_data: StakeBase,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -196,7 +196,7 @@ async def stake_to_account(
 @router.post("/unstake/{account_id}", response_model=StakeStatus, status_code=status.HTTP_200_OK)
 async def unstake_from_account(
     account_id: int,
-    stake_data: StakeRequest,
+    stake_data: StakeBase,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):

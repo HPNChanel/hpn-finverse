@@ -142,17 +142,22 @@ const NewAccountDialog: React.FC<NewAccountDialogProps> = ({
       return;
     }
 
-    await handleCreateAccount({
-      name: accountName.trim(),
-      type: accountType,
-      initialBalance: initialBalance === '' ? 0 : Number(initialBalance),
-      note: accountNote.trim() || undefined,
-      icon: accountIcon,
-      color: accountColor,
-      currency: currency
-    });
+    try {
+      await handleCreateAccount({
+        name: accountName.trim(),
+        type: accountType,
+        initialBalance: initialBalance === '' ? 0 : Number(initialBalance),
+        note: accountNote.trim() || undefined,
+        icon: accountIcon,
+        color: accountColor,
+        currency: currency
+      });
 
-    resetForm();
+      resetForm();
+    } catch (error) {
+      console.error('Error in form submission:', error);
+      // Error will be handled by the parent component
+    }
   };
 
   return (

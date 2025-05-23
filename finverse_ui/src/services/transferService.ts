@@ -1,6 +1,6 @@
 import api from './api';
 import { handleErrorResponse } from '../utils/importFixes';
-import type { InternalTransaction, InternalTransactionListResponse } from '../utils/importFixes';
+import type { InternalTransaction } from '../types';
 
 export interface TransferRequest {
   from_account_id: number;
@@ -9,16 +9,41 @@ export interface TransferRequest {
   note?: string;
 }
 
+export interface TransferListResponse {
+  transactions: InternalTransaction[];
+}
+
+export interface TransferFilters {
+  page?: number;
+  per_page?: number;
+  from_account_id?: number;
+  to_account_id?: number;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+}
+
 const transferService = {
   /**
-   * Get all transactions for the current user
+   * Get all transfers with optional filtering
    */
-  getTransactions: async (): Promise<InternalTransaction[]> => {
+  getTransactions: async (filters?: TransferFilters): Promise<InternalTransaction[]> => {
     try {
-      const response = await api.get<InternalTransactionListResponse>('/accounts/transactions');
-      return response.data.transactions;
+      // Prepare query parameters
+      const params: Record<string, any> = {};
+      if (filters) {
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            params[key] = value;
+          }
+        });
+      }
+
+      // Use the correct endpoint: /transactions instead of /accounts/transactions
+      const response = await api.get<{ transactions: InternalTransaction[] }>('/transactions', { params });
+      return response.data.transactions || [];
     } catch (error) {
-      console.error('Error fetching transactions:', error);
+      console.error('Error fetching transfers:', error);
       throw new Error(handleErrorResponse(error));
     }
   },

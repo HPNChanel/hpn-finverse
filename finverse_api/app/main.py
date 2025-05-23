@@ -11,15 +11,13 @@ from app.models.user import User
 from app.models.staking import Stake
 from app.models.transaction import Transaction
 from app.models.financial_account import FinancialAccount
-from app.models.internal_transaction import InternalTransaction
 from app.models.budget_plan import BudgetPlan
 from app.models.financial_goal import FinancialGoal
-from app.models.recurring_transaction import RecurringTransaction
-from app.models.category import Category
 
-from app.routers import auth, staking, transactions, financial_account, budget_plan, profile, internal_transaction, financial_goal, recurring_transaction, category
+from app.routers import auth, staking, transactions, financial_account, budget_plan, profile, financial_goal
 from app.config import API_TITLE, API_DESCRIPTION, API_VERSION
 from app.db.session import Base, engine, get_db
+from app.middleware.error_handler import ErrorHandlerMiddleware
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -31,10 +29,13 @@ app = FastAPI(
     version=API_VERSION,
 )
 
+# Add error handling middleware
+app.add_middleware(ErrorHandlerMiddleware)
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Content-Type", "Authorization", "Accept", "X-Requested-With"],
@@ -50,12 +51,9 @@ api_v1_router.include_router(auth.router)
 api_v1_router.include_router(staking.router)
 api_v1_router.include_router(transactions.router)
 api_v1_router.include_router(financial_account.router)
-api_v1_router.include_router(internal_transaction.router)
 api_v1_router.include_router(budget_plan.router)
 api_v1_router.include_router(profile.router)
 api_v1_router.include_router(financial_goal.router)
-api_v1_router.include_router(recurring_transaction.router)
-api_v1_router.include_router(category.router)
 
 # Mount the API v1 router at /api/v1
 app.mount("/api/v1", api_v1_router)

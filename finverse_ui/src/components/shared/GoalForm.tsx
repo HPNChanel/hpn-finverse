@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { 
   Box, 
   Button, 
@@ -22,6 +22,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import type { FinancialGoal } from '../../utils/importFixes';
+import { useCurrency } from '../../hooks/useCurrency';
 
 // Zod schema for validating financial goal form
 const goalSchema = z.object({
@@ -65,8 +66,6 @@ interface GoalFormProps {
 // Helper to format date for input field
 const formatDateForInput = (dateString: string): string => {
   try {
-    // If using date-fns, you can use this:
-    // return format(new Date(dateString), 'yyyy-MM-dd');
     const date = new Date(dateString);
     return date.toISOString().split('T')[0];
   } catch {
@@ -81,6 +80,8 @@ const GoalForm: React.FC<GoalFormProps> = ({
   goal,
   isLoading = false 
 }) => {
+  const { currency, currencySymbol } = useCurrency();
+  
   // Default values for the form
   const defaultValues: Partial<GoalFormData> = {
     name: goal?.name || '',
@@ -99,7 +100,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
   const { 
     control, 
     handleSubmit, 
-    formState: { errors, isValid },
+    formState: { errors },
     reset
   } = useForm<GoalFormData>({
     resolver: zodResolver(goalSchema),
@@ -113,7 +114,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
   };
 
   // Reset form on open and when goal changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (open) {
       reset(defaultValues);
     }
@@ -125,7 +126,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
       onClose={onClose} 
       maxWidth="md" 
       fullWidth
-      PaperProps={{ sx: { borderRadius: 2 } }}
+      PaperProps={{ sx: { borderRadius: '12px' } }}
     >
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         {goal ? 'Edit Financial Goal' : 'Create New Financial Goal'}
@@ -169,7 +170,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
                     error={!!errors.target_amount}
                     helperText={errors.target_amount?.message}
                     InputProps={{
-                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                      startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>,
                     }}
                     onChange={(e) => field.onChange(Number(e.target.value))}
                     required
@@ -193,7 +194,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
                     error={!!errors.current_amount}
                     helperText={errors.current_amount?.message}
                     InputProps={{
-                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                      startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>,
                     }}
                     onChange={(e) => field.onChange(Number(e.target.value))}
                     required
@@ -325,24 +326,6 @@ const GoalForm: React.FC<GoalFormProps> = ({
               />
             </Grid>
             
-            {/* Icon */}
-            <Grid item xs={12} sm={6}>
-              <Controller
-                name="icon"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Icon (Optional)"
-                    fullWidth
-                    error={!!errors.icon}
-                    helperText={errors.icon?.message || 'Icon name (e.g., "star", "home")'}
-                    disabled={isLoading}
-                  />
-                )}
-              />
-            </Grid>
-            
             {/* Description */}
             <Grid item xs={12}>
               <Controller
@@ -365,21 +348,21 @@ const GoalForm: React.FC<GoalFormProps> = ({
           </Grid>
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onClose} disabled={isLoading}>
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={onClose} color="inherit" disabled={isLoading}>
           Cancel
         </Button>
         <Button 
           onClick={handleSubmit(onFormSubmit)} 
           variant="contained" 
-          disabled={!isValid || isLoading}
+          disabled={isLoading}
           startIcon={isLoading ? <CircularProgress size={20} /> : null}
         >
-          {isLoading ? 'Saving...' : goal ? 'Update Goal' : 'Create Goal'}
+          {isLoading ? 'Saving...' : (goal ? 'Update Goal' : 'Create Goal')}
         </Button>
       </DialogActions>
     </Dialog>
   );
 };
 
-export default GoalForm; 
+export default GoalForm;

@@ -6,7 +6,6 @@ import TransferForm from '../../components/TransferForm';
 import TransactionTable from '../../components/TransactionTable';
 import { useAccounts, useTransfers, useSnackbar, usePageTitle } from '../../hooks';
 import { LoadingOverlay, CustomSnackbar } from '../../components/shared';
-import PageLayout from '../../components/layouts/PageLayout';
 
 const Transfer: React.FC = () => {
   usePageTitle('Transfer Funds');
@@ -29,7 +28,7 @@ const Transfer: React.FC = () => {
   };
 
   return (
-    <PageLayout title="Transfer Funds">
+    <>
       {error && (
         <Alert severity="error" sx={{ mb: 4 }}>
           {error}
@@ -74,7 +73,7 @@ const Transfer: React.FC = () => {
         severity={snackbar.severity}
         onClose={hideSnackbar}
       />
-    </PageLayout>
+    </>
   );
 };
 

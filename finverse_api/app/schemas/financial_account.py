@@ -18,13 +18,13 @@ class FinancialAccountBase(BaseModel):
 
 class FinancialAccountCreate(BaseModel):
     """Schema for creating a financial account"""
-    name: str
-    type: str
-    initial_balance: float = Field(0.0, ge=0)  # Default to 0, must be >= 0
-    icon: Optional[str] = None
-    color: Optional[str] = None
-    note: Optional[str] = None
-    currency: Optional[str] = "USD"
+    name: str = Field(..., min_length=1, max_length=100)
+    type: str = Field(..., description="Type of account (wallet, saving, investment, goal)")
+    initial_balance: float = Field(0.0, ge=0, description="Initial balance amount")
+    note: Optional[str] = Field(None, max_length=500)
+    icon: Optional[str] = Field(None)
+    color: Optional[str] = Field(None)
+    currency: str = Field("USD", min_length=3, max_length=3)
 
 
 class FinancialAccountResponse(BaseModel):

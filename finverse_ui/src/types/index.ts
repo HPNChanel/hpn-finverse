@@ -1,34 +1,52 @@
+// Central type definitions for the FinVerse application
+
+// Account-related types
 export interface Account {
   id: number;
-  user_id: number;
   name: string;
   type: string;
   balance: number;
-  created_at: string;
+  currency?: string;
   icon?: string;
   color?: string;
-  created_by_default?: boolean;
+  created_at?: string;
+  updated_at?: string;
   note?: string;
-  currency: string;
+  created_by_default?: boolean;
 }
 
+export interface AccountListResponse {
+  accounts: Account[];
+}
+
+export interface AccountSummary {
+  total: number;
+  wallet: number;
+  saving: number;
+  investment: number;
+  goal: number;
+  account_count: number;
+}
+
+// Financial goal types
 export interface FinancialGoal {
   id: number;
-  user_id: number;
   name: string;
   target_amount: number;
   current_amount: number;
   start_date: string;
   target_date: string;
   description?: string;
-  priority: number; // 1=low, 2=medium, 3=high
-  status: number; // 1=ongoing, 2=completed, 3=cancelled
+  priority: number;
+  status: number;
+  progress_percentage: number;
   icon?: string;
   color?: string;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
+// Transaction-related types
 export interface InternalTransaction {
   id: number;
   from_account_id: number;
@@ -36,83 +54,112 @@ export interface InternalTransaction {
   amount: number;
   timestamp: string;
   note?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface BudgetPlan {
+export interface Transaction {
   id: number;
-  account_id: number;
-  category: string;
-  limit_amount: number;
-  spent_amount: number;
-  status: string;
+  account_id?: number;
+  from_account_id?: number;
+  to_account_id?: number;
+  amount: number;
+  timestamp?: string;
+  transaction_type: string;
+  category?: string;
+  description?: string;
   created_at: string;
-}
-
-export interface AccountListResponse {
-  accounts: Account[];
+  updated_at?: string;
 }
 
 export interface TransactionListResponse {
-  transactions: InternalTransaction[];
+  transactions: Transaction[];
+}
+
+// Budget-related types
+export interface BudgetPlan {
+  id: number;
+  user_id: number;
+  account_id: number;
+  category: string;
+  amount: number; // Frontend sometimes uses limit_amount
+  spent_amount?: number;
+  status?: string;
+  period: string; // MONTHLY, WEEKLY, etc.
+  created_at: string;
+  updated_at: string;
 }
 
 export interface BudgetPlanListResponse {
   budget_plans: BudgetPlan[];
 }
 
-export interface StakingAccount {
+// Staking-related types
+export interface Stake {
   id: number;
   user_id: number;
   name: string;
   address: string;
-  balance: number;
-  created_at: string;
-}
-
-export interface StakingReward {
   amount: number;
-  apy: number;
-  earned: number;
-  duration_days: number;
+  balance: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-// Define StakingProfile type with an id property
 export interface StakingProfile {
-  id: number;
-  // Add other properties based on your application needs
-  walletAddress?: string;
-  balance?: number;
-  stakingAmount?: number;
-  rewardsEarned?: number;
-  stakingStartDate?: string;
+  account: {
+    id: number;
+    name: string;
+    address: string;
+    balance: number;
+  };
+  status: {
+    total_staked: number;
+    locked_until?: string;
+  };
+  rewards: {
+    earned: number;
+    last_claim?: string;
+  };
 }
 
-// Define ProfileResponse type
-export interface ProfileResponse {
+// User-related types
+export interface UserProfile {
   id: number;
   username: string;
-  email: string;
-  createdAt: string;
-  // Add other properties as needed
-}
-
-// Define ProfileUpdateRequest type
-export interface ProfileUpdateRequest {
-  username?: string;
   email?: string;
-  // Add other properties as needed
+  name?: string;
+  created_at: string;
+  updated_at?: string;
 }
 
-// Define StakeStatus type
-export type StakeStatus = 'ACTIVE' | 'PENDING' | 'INACTIVE' | 'COMPLETED';
+// Navigation-related types
+export interface NavItem {
+  title: string;
+  path: string;
+  icon?: React.ReactNode;
+  roles?: string[];
+  children?: NavItem[];
+  isOpen?: boolean;
+  isActive?: boolean;
+}
 
-// Define AccountSummary type with fetchSummary method
-export interface AccountSummary {
-  wallet: number;
-  saving: number;
-  investment: number;
-  goal: number;
-  total: number;
-  account_count: number;
-  fetchSummary?: () => Promise<void>;
+export interface BreadcrumbItem {
+  label: string;
+  to?: string;
+  path?: string; // Added path property for PageContainer component
+  icon?: React.ReactNode;
+}
+
+// API error type
+export interface ApiError {
+  response?: {
+    data?: {
+      detail?: string;
+      message?: string;
+    };
+    status?: number;
+  };
+  message?: string;
 }

@@ -1,23 +1,19 @@
 import React, { useCallback } from 'react';
 import {
-  Grid,
   Button,
   Alert,
   Fab,
   Box,
 } from '@mui/material';
 import { Add as AddIcon } from '@mui/icons-material';
-import { useAccounts, useFormDialog, useSnackbar, usePageTitle, useAccountSummary, useAccountTypes } from '../../hooks';
-import { EmptyState, CustomSnackbar, LoadingOverlay } from '../../components/shared';
-import PageLayout from '../../components/layouts/PageLayout';
+import { useAccounts, useFormDialog, useSnackbar, useAccountSummary, useAccountTypes } from '../../hooks';
+import { EmptyState, CustomSnackbar } from '../../components/shared';
 import TotalSummaryCard from '../../components/account/TotalSummaryCard';
 import AccountGroupSection from '../../components/account/AccountGroupSection';
 import NewAccountDialog from '../../components/account/NewAccountDialog';
 import type { CreateAccountFormData } from '../../components/account/NewAccountDialog';
 
 const Accounts: React.FC = () => {
-  usePageTitle('Financial Accounts');
-  
   // Hooks
   const { accounts, loading: accountsLoading, error: accountsError, createAccount, fetchAccounts } = useAccounts();
   const { summary, loading: summaryLoading, error: summaryError, fetchSummary } = useAccountSummary();
@@ -73,7 +69,7 @@ const Accounts: React.FC = () => {
   // If there are no accounts and we're not loading, show empty state
   if (!loading && (!accounts || accounts.length === 0)) {
     return (
-      <PageLayout title="Financial Accounts">
+      <Box sx={{ p: 3 }}>
         <EmptyState
           title="No accounts found"
           description="Create your first account to start managing your finances"
@@ -97,15 +93,15 @@ const Accounts: React.FC = () => {
           severity={snackbar.severity}
           onClose={hideSnackbar}
         />
-      </PageLayout>
+      </Box>
     );
   }
 
   return (
-    <PageLayout 
-      title="Financial Accounts" 
-      action={actionButton}
-    >
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        {actionButton}
+      </Box>
       {error && (
         <Alert severity="error" sx={{ mb: 4 }}>
           {error}
@@ -176,7 +172,7 @@ const Accounts: React.FC = () => {
         severity={snackbar.severity}
         onClose={hideSnackbar}
       />
-    </PageLayout>
+    </Box>
   );
 };
 

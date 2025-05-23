@@ -1,5 +1,5 @@
 import api from './api';
-import type { Account, AccountListResponse, AccountSummary } from '../utils/importFixes';
+import type { Account, AccountListResponse, AccountSummary } from '../types';
 import { handleErrorResponse } from '../utils/importFixes';
 import axios from 'axios';
 
@@ -82,12 +82,39 @@ const accountService = {
 
   /**
    * Create a new account
-   * @param data Account creation data
+   * @param name Account name
+   * @param type Account type
+   * @param initialBalance Initial balance amount
+   * @param note Optional account note
+   * @param icon Optional icon name
+   * @param color Optional color code
+   * @param currency Optional currency code (defaults to USD)
    * @returns Created account
    */
-  createAccount: async (data: CreateAccountRequest): Promise<Account> => {
+  createAccount: async (
+    name: string,
+    type: string,
+    initialBalance: number = 0,
+    note?: string,
+    icon?: string,
+    color?: string,
+    currency: string = 'USD'
+  ): Promise<Account> => {
     try {
-      const response = await api.post<Account>('/accounts/create', data);
+      // Format request payload according to backend expectations
+      const payload = {
+        name: name.trim(),
+        type: type,
+        initial_balance: initialBalance,
+        note: note?.trim(),
+        icon: icon,
+        color: color,
+        currency: currency
+      };
+      
+      console.log('Creating account with payload:', JSON.stringify(payload, null, 2));
+      
+      const response = await api.post<Account>('/accounts/create', payload);
       return response.data;
     } catch (error) {
       console.error('Error creating account:', error);
@@ -98,6 +125,24 @@ const accountService = {
         }
         if (error.response?.status === 401) {
           throw new Error('Authentication required. Please log in again.');
+        }
+        if (error.response?.status === 422) {
+          // Handle validation errors from FastAPI
+          console.error('Validation error details:', JSON.stringify(error.response?.data));
+          const validationError = error.response?.data?.detail;
+          
+          if (Array.isArray(validationError)) {
+            // Extract the first validation error message
+            const firstError = validationError[0];
+            const errorMsg = firstError.msg || 'Invalid data format';
+            const field = firstError.loc?.slice(-1)[0] || 'field';
+            throw new Error(`Validation error: ${errorMsg} (${field})`);
+          }
+          
+          throw new Error(
+            error.response?.data?.detail || 
+            'The server could not process your request. Please check your input data.'
+          );
         }
         if (error.response?.status === 400) {
           const errorDetail = error.response.data?.detail || 'Invalid account data';
