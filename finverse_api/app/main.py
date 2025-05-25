@@ -14,7 +14,7 @@ from app.models.financial_account import FinancialAccount
 from app.models.budget_plan import BudgetPlan
 from app.models.financial_goal import FinancialGoal
 
-from app.routers import auth, staking, transactions, financial_account, budget_plan, profile, financial_goal
+from app.routers import auth, staking, transactions, financial_account, budget_plan, profile, financial_goal, users
 from app.config import API_TITLE, API_DESCRIPTION, API_VERSION
 from app.db.session import Base, engine, get_db
 from app.middleware.error_handler import ErrorHandlerMiddleware
@@ -48,6 +48,7 @@ api_v1_router = FastAPI(title=f"{API_TITLE} - V1")
 
 # Include routers under the API v1 router
 api_v1_router.include_router(auth.router)
+api_v1_router.include_router(users.router)  # Add users router
 api_v1_router.include_router(staking.router)
 api_v1_router.include_router(transactions.router)
 api_v1_router.include_router(financial_account.router)

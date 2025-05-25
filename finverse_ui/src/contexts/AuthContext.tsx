@@ -1,23 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import api from '../services/api';
-
-interface UserInfo {
-  id: number;
-  username: string;
-  name?: string;
-  created_at: string;
-}
+import authService from '../services/authService';
+import type { User } from '../types';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (token: string) => void;
+  login: (token: string, refreshToken?: string) => Promise<void>;
   logout: () => void;
   refreshUserData: () => Promise<void>;
   validateToken: () => Promise<boolean>;
-  user: UserInfo | null;
-  walletAddress?: string;
-  isLoading: boolean; // Add loading state
+  user: User | null;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,7 +19,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Helper to check if current path is public (non-authenticated)
 const isPublicPath = (): boolean => {
   const path = window.location.pathname;
-  return path === '/' || // landing page
+  return path === '/' || 
          path === '/login' || 
          path === '/register' ||
          path.startsWith('/password-reset') ||
@@ -35,118 +29,127 @@ const isPublicPath = (): boolean => {
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [user, setUser] = useState<UserInfo | null>(null);
-  const [walletAddress, setWalletAddress] = useState<string | undefined>(undefined);
+  const [user, setUser] = useState<User | null>(null);
   
-  // Function to validate token without causing logout on failure
+  // Function to validate token and fetch user data
   const validateToken = useCallback(async (): Promise<boolean> => {
     const token = localStorage.getItem('token');
-    if (!token) return false;
+    
+    if (!token) {
+      return false;
+    }
     
     try {
-      // Make a lightweight API call to test token validity
-      await api.get('/auth/validate');
+      // Set authorization header
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // Fetch current user data
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
       return true;
     } catch (error) {
       console.error('Token validation failed:', error);
-      // Don't logout or remove token here - this is just validation
+      
+      // Token is invalid, clear everything
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      delete api.defaults.headers.common['Authorization'];
+      setUser(null);
       return false;
     }
   }, []);
 
-  // Fetch user data from the API
+  // Fetch user data with error handling
   const fetchUserData = useCallback(async (): Promise<void> => {
-    if (!localStorage.getItem('token')) {
-      setIsLoading(false);
-      return;
-    }
-    
-    // Skip API call on public pages
-    if (isPublicPath()) {
-      console.log('Skipping auth check on public page');
-      setIsLoading(false);
-      return;
-    }
-    
     try {
       setIsLoading(true);
-      const response = await api.get<UserInfo>('/auth/me');
-      setUser(response.data);
-      setIsAuthenticated(true);
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
     } catch (error) {
-      console.error('Error fetching user data:', error);
-      // Only logout if it's specifically an authentication error
-      if ((error as {isAuthError?: boolean})?.isAuthError) {
-        logout();
-      }
+      console.error('Failed to fetch user data:', error);
+      // If user fetch fails, clear auth state
+      setUser(null);
+      setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Function to refresh user data (used when changes are made)
+  // Function to refresh user data
   const refreshUserData = useCallback(async (): Promise<void> => {
-    // Skip refresh on public pages
-    if (isPublicPath()) {
-      setIsLoading(false);
-      return;
+    if (isAuthenticated) {
+      await fetchUserData();
     }
-    
-    await fetchUserData();
-  }, [fetchUserData]);
+  }, [isAuthenticated, fetchUserData]);
 
-  // Check if token exists in localStorage on mount
+  // Initialize authentication state
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    
-    if (token) {
-      setIsAuthenticated(true);
+    const initializeAuth = async () => {
+      setIsLoading(true);
       
-      // Only fetch user data if not on public page
-      if (!isPublicPath()) {
-        fetchUserData();
-      } else {
-        setIsLoading(false);
+      // If we're on a public path and no token exists, stay unauthenticated
+      const token = localStorage.getItem('token');
+      if (!token) {
+        if (isPublicPath()) {
+          setIsAuthenticated(false);
+          setIsLoading(false);
+          return;
+        } else {
+          // Redirect to login if not on public path and no token
+          window.location.href = '/login';
+          return;
+        }
       }
-    } else {
-      setIsAuthenticated(false);
+      
+      // Validate token and fetch user data
+      const isValid = await validateToken();
+      setIsAuthenticated(isValid);
+      
+      if (!isValid && !isPublicPath()) {
+        // Redirect to login if token is invalid and not on public path
+        window.location.href = '/login';
+      }
+      
+      setIsLoading(false);
+    };
+
+    initializeAuth();
+  }, [validateToken]);
+
+  // Login function that stores token and fetches user data
+  const login = useCallback(async (token: string, refreshToken?: string) => {
+    try {
+      setIsLoading(true);
+      
+      // Store tokens
+      localStorage.setItem('token', token);
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken);
+      }
+      
+      // Set authorization header
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
+      // Fetch user data
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
+      setIsAuthenticated(true);
+    } catch (error) {
+      console.error('Login failed to fetch user data:', error);
+      // Even if user data fetch fails, consider login successful if token is stored
+      setIsAuthenticated(true);
+    } finally {
       setIsLoading(false);
     }
-  }, [fetchUserData]);
+  }, []);
 
-  // Also listen to path changes to handle navigation to/from landing page
-  useEffect(() => {
-    const handleLocationChange = () => {
-      const token = localStorage.getItem('token');
-      if (token && !isPublicPath()) {
-        fetchUserData();
-      } else {
-        setIsLoading(false);
-      }
-    };
-
-    // Listen to navigation events
-    window.addEventListener('popstate', handleLocationChange);
-    
-    return () => {
-      window.removeEventListener('popstate', handleLocationChange);
-    };
-  }, [fetchUserData]);
-
-  // Store token in localStorage and set authenticated state
-  const login = useCallback((token: string) => {
-    localStorage.setItem('token', token);
-    setIsAuthenticated(true);
-    fetchUserData();
-  }, [fetchUserData]);
-
-  // Remove token from localStorage and set authenticated state to false
+  // Logout function
   const logout = useCallback(() => {
     localStorage.removeItem('token');
-    setIsAuthenticated(false);
+    localStorage.removeItem('refreshToken');
+    delete api.defaults.headers.common['Authorization'];
     setUser(null);
-    setWalletAddress(undefined);
-    setIsLoading(false);
+    setIsAuthenticated(false);
   }, []);
 
   return (
@@ -156,7 +159,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         login, 
         logout, 
         user, 
-        walletAddress,
         refreshUserData,
         validateToken,
         isLoading
@@ -170,7 +172,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 // Custom hook to use the auth context
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if( context === undefined) {
+  if(context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;

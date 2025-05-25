@@ -49,11 +49,24 @@ const navItems = [
 
 const Drawer: React.FC<DrawerProps> = ({ toggleColorMode, mode }) => {
   const { isDrawerOpen, closeDrawer } = useMainLayout(); 
-  const { isAuthenticated, user } = useAuth();
+  const { user, isLoading } = useAuth();
   const location = useLocation();
   
-  // Filter navigation items based on authentication status
-  const drawerItems = navItems.filter(item => !item.authRequired || isAuthenticated);
+  // Helper functions for user display with loading states
+  const getDisplayName = (): string => {
+    if (isLoading) return 'Loading...';
+    if (!user) return 'Guest';
+    return user.full_name || user.name || user.username || 'User';
+  };
+
+  const getUserEmail = (): string => {
+    if (isLoading) return 'Loading...';
+    if (!user) return '';
+    return user.email || 'user@example.com';
+  };
+  
+  // Show all navigation items
+  const drawerItems = navItems;
   
   return (
     <MuiDrawer
@@ -94,16 +107,15 @@ const Drawer: React.FC<DrawerProps> = ({ toggleColorMode, mode }) => {
         </IconButton>
       </Box>
       
-      {isAuthenticated && (
-        <Box sx={{ p: 2, bgcolor: 'primary.dark', color: 'primary.contrastText' }}>
-          <Typography variant="subtitle1" fontWeight={500}>
-            {user?.name || user?.username}
-          </Typography>
-          <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
-            {user?.email || user?.username}
-          </Typography>
-        </Box>
-      )}
+      {/* User info section */}
+      <Box sx={{ p: 2, bgcolor: 'primary.dark', color: 'primary.contrastText' }}>
+        <Typography variant="subtitle1" fontWeight={500}>
+          {getDisplayName()}
+        </Typography>
+        <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
+          {getUserEmail()}
+        </Typography>
+      </Box>
       
       <Divider />
       

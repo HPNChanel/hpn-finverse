@@ -98,15 +98,44 @@ async def create_goal(
     Create a new financial goal for the current user
     """
     try:
+        print(f"Creating goal for user {current_user.id} with data: {goal.dict()}")
+        
         goal_service = FinancialGoalService()
         db_goal = goal_service.create_goal(db, goal, current_user.id)
+        
+        # Build response with proper field mapping
+        goal_response = FinancialGoalResponse(
+            id=db_goal.id,
+            user_id=db_goal.user_id,
+            name=db_goal.name,
+            target_amount=db_goal.target_amount,
+            current_amount=db_goal.current_amount,
+            start_date=db_goal.start_date,
+            target_date=db_goal.target_date,
+            description=db_goal.description,
+            priority=db_goal.priority,
+            status=db_goal.status,
+            icon=db_goal.icon,
+            color=db_goal.color,
+            progress_percentage=db_goal.progress_percentage,
+            created_at=db_goal.created_at,
+            updated_at=db_goal.updated_at
+        )
         
         return StandardResponse(
             success=True,
             message="Goal created successfully",
-            data=FinancialGoalResponse.from_orm(db_goal)
+            data=goal_response
+        )
+    except ValueError as e:
+        print(f"Validation error creating goal: {str(e)}")
+        return StandardResponse(
+            success=False,
+            message="Validation error",
+            errors=[{"detail": str(e)}]
         )
     except Exception as e:
+        print(f"Error creating goal: {str(e)}")
         return StandardResponse(
             success=False,
             message="Failed to create goal",
@@ -178,4 +207,4 @@ async def delete_goal(
             success=False,
             message="Failed to delete goal",
             errors=[{"detail": str(e)}]
-        ) 
+        )

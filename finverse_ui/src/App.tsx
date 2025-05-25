@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { ThemeProvider, CssBaseline, GlobalStyles, type PaletteMode } from '@mui/material';
+import { ThemeProvider, CssBaseline, GlobalStyles, type PaletteMode, Box, CircularProgress, Typography } from '@mui/material';
 import { getTheme } from './theme/muiTheme';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { CurrencyProvider } from './contexts/CurrencyContext'; // Add this import
+import { CurrencyProvider } from './contexts/CurrencyContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import { MainLayout, PageContainer } from './components/layouts';
 
@@ -19,9 +19,8 @@ import {
   History,
   Profile,
   RecurringTransactions,
-  TrendsPage,
   Goals,
-  UserSettings // Import UserSettings
+  UserSettings
 } from './pages';
 
 // Import transaction-related pages
@@ -36,15 +35,28 @@ import StakingProfile from './pages/staking/StakingProfile';
 // Import new landing page
 import LandingPage from './pages/landing/LandingPage';
 
-// Protected route component
+// Protected Route component for authenticated pages
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  // TODO: Add isLoading check here once AuthContext provides it for better UX
-  const { isAuthenticated /*, isLoading */ } = useAuth(); 
+  const { isAuthenticated, isLoading } = useAuth();
   
-  // if (isLoading) {
-  //   return <div>Loading authentication status...</div>; 
-  // }
-
+  if (isLoading) {
+    return (
+      <Box 
+        display="flex" 
+        justifyContent="center" 
+        alignItems="center" 
+        minHeight="100vh"
+        flexDirection="column"
+        gap={2}
+      >
+        <CircularProgress size={40} />
+        <Typography variant="body2" color="text.secondary">
+          Loading...
+        </Typography>
+      </Box>
+    );
+  }
+  
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
@@ -52,12 +64,16 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Layout for routes that use MainLayout and PageContainer
-const AppLayout = ({ toggleColorMode, mode }: { toggleColorMode: () => void; mode: PaletteMode }) => (
-  <MainLayout toggleColorMode={toggleColorMode} mode={mode}>
-    <Outlet />
-  </MainLayout>
-);
+// Layout wrapper with proper authentication
+const AppLayoutWrapper = ({ toggleColorMode, mode }: { toggleColorMode: () => void; mode: PaletteMode }) => {
+  return (
+    <ProtectedRoute>
+      <MainLayout toggleColorMode={toggleColorMode} mode={mode}>
+        <Outlet />
+      </MainLayout>
+    </ProtectedRoute>
+  );
+};
 
 // Main App component
 const App: React.FC = () => {
@@ -77,7 +93,7 @@ const App: React.FC = () => {
       <GlobalStyles styles={{ body: { scrollbarGutter: 'stable' } }} />
       <ErrorBoundary>
         <AuthProvider>
-          <CurrencyProvider> {/* Add CurrencyProvider */}
+          <CurrencyProvider>
             <Router>
               <Routes>
                 {/* Routes without MainLayout */}
@@ -85,80 +101,77 @@ const App: React.FC = () => {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
 
-                {/* Routes with MainLayout and PageContainer */}
-                <Route element={<AppLayout toggleColorMode={toggleColorMode} mode={mode} />}>
+                {/* Routes with MainLayout - no protection needed */}
+                <Route element={<AppLayoutWrapper toggleColorMode={toggleColorMode} mode={mode} />}>
                   <Route 
                     path="/dashboard" 
-                    element={<ProtectedRoute><PageContainer title="Dashboard"><Dashboard /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Dashboard"><Dashboard /></PageContainer>} 
                   />
                   
                   {/* Transaction management routes */}
                   <Route 
                     path="/transactions" 
-                    element={<ProtectedRoute><PageContainer title="Transactions"><Transactions /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Transactions"><Transactions /></PageContainer>} 
                   />
                   <Route 
                     path="/transactions/create" 
-                    element={<ProtectedRoute><PageContainer title="Create Transaction"><CreateTransaction /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Create Transaction"><CreateTransaction /></PageContainer>} 
                   />
                   <Route 
                     path="/transactions/history" 
-                    element={<ProtectedRoute><PageContainer title="Transaction History"><TransactionHistory /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Transaction History"><TransactionHistory /></PageContainer>} 
                   />
                   
                   <Route 
                     path="/accounts" 
-                    element={<ProtectedRoute><PageContainer title="Financial Accounts"><Accounts /></PageContainer></ProtectedRoute>}
+                    element={<PageContainer title="Financial Accounts"><Accounts /></PageContainer>}
                   />
                   <Route 
                     path="/budget" 
-                    element={<ProtectedRoute><PageContainer title="Budget Planning"><Budgets /></PageContainer></ProtectedRoute>}
+                    element={<PageContainer title="Budget Planning"><Budgets /></PageContainer>}
                   />
                   <Route 
                     path="/staking" 
-                    element={<ProtectedRoute><PageContainer title="Staking Dashboard"><StakingDashboard /></PageContainer></ProtectedRoute>}
+                    element={<PageContainer title="Staking Dashboard"><StakingDashboard /></PageContainer>}
                   />
                   <Route 
                     path="/profile" 
-                    element={<ProtectedRoute><PageContainer title="My Profile"><Profile /></PageContainer></ProtectedRoute>}
-                  />
-                  <Route 
-                    path="/trends" 
-                    element={<ProtectedRoute><PageContainer title="Trends & Reports"><TrendsPage /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="My Profile"><Profile /></PageContainer>}
                   />
                   <Route 
                     path="/goals"
-                    element={<ProtectedRoute><PageContainer title="Financial Goals"><Goals /></PageContainer></ProtectedRoute>}
+                    element={<PageContainer title="Financial Goals"><Goals /></PageContainer>}
                   />
                   <Route 
                     path="/settings" 
-                    element={<ProtectedRoute><PageContainer><UserSettings /></PageContainer></ProtectedRoute>}
+                    element={<PageContainer><UserSettings /></PageContainer>}
                   />
                   
-                  {/* Other existing protected routes - review later if they fit the new design */}
+                  {/* Other existing routes - no protection */}
                   <Route 
                     path="/transfer" 
-                    element={<ProtectedRoute><PageContainer title="Transfer Funds"><Transfer /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Transfer Funds"><Transfer /></PageContainer>} 
                   />
                    <Route 
                     path="/history" 
-                    element={<ProtectedRoute><PageContainer title="History"><History /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="History"><History /></PageContainer>} 
                   />
                   <Route 
                     path="/recurring-transactions" 
-                    element={<ProtectedRoute><PageContainer title="Recurring Transactions"><RecurringTransactions /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Recurring Transactions"><RecurringTransactions /></PageContainer>} 
                   />
                   <Route 
                     path="/staking/register" 
-                    element={<ProtectedRoute><PageContainer title="Staking Registration"><StakingRegister /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Staking Registration"><StakingRegister /></PageContainer>} 
                   />
                   <Route 
                     path="/staking/profile/:validatorId"
-                    element={<ProtectedRoute><PageContainer title="Staking Profile"><StakingProfile /></PageContainer></ProtectedRoute>} 
+                    element={<PageContainer title="Staking Profile"><StakingProfile /></PageContainer>} 
                   />
                 </Route>
                 
-                <Route path="*" element={<Navigate to="/" replace />} />
+                {/* Fallback route - go to dashboard instead of home */}
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             </Router>
           </CurrencyProvider>

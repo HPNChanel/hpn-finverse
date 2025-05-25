@@ -3,8 +3,9 @@ Authentication schemas for FinVerse API
 """
 
 from pydantic import BaseModel, Field, validator
-import re
 from typing import Optional
+from datetime import datetime
+import re
 
 
 class Token(BaseModel):
@@ -54,7 +55,19 @@ class UserResponse(BaseModel):
     id: int
     username: str
     name: Optional[str] = None
-    is_active: bool = True
+    full_name: Optional[str] = None  # Add full_name field
+    email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         orm_mode = True
+        
+    @validator('full_name', pre=True, always=True)
+    def set_full_name(cls, v, values):
+        """Set full_name from name field for compatibility"""
+        if v is None and 'name' in values:
+            return values['name']
+        return v

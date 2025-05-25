@@ -39,6 +39,9 @@ export type {
   StakingProfile
 };
 
+// Import AxiosError type for isAxiosError function
+import { AxiosError } from 'axios';
+
 // Helper function to check if an error is an AxiosError
 export function isAxiosError(error: unknown): error is AxiosError {
   return (error as AxiosError)?.isAxiosError === true;
@@ -61,29 +64,8 @@ export function getErrorMessage(error: unknown): string {
   return 'An unexpected error occurred';
 }
 
-// Utility function for handling unknown errors
-export const handleErrorResponse = (error: unknown): string => {
-  if (axios.isAxiosError(error)) {
-    // Handle axios errors
-    // Add explicit type checking
-    const responseData = error.response?.data as { detail?: string; message?: string } | undefined;
-    if (responseData?.detail) {
-      return responseData.detail;
-    }
-    if (responseData?.message) {
-      return responseData.message;
-    }
-    if (error.message) {
-      return error.message;
-    }
-  }
-  
-  if (error instanceof Error) {
-    return error.message;
-  }
-  
-  return 'An unknown error occurred';
-};
+// Export handleErrorResponse as an alias for backward compatibility
+export const handleErrorResponse = getErrorMessage;
 
 // Chart colors
 export const chartColors = {
@@ -96,4 +78,19 @@ export const chartColors = {
   background: '#F9FAFB',
   paper: '#FFFFFF',
   divider: '#E5E7EB',
+};
+
+// Animation variants for consistent motion
+export const dashboardAnimations = {
+  container: {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1, delayChildren: 0.1 }
+    }
+  },
+  item: {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } }
+  }
 };

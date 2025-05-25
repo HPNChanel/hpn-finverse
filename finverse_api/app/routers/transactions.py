@@ -3,9 +3,10 @@ Transactions router for FinVerse API
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, Query
-from typing import List, Optional
+from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
-from datetime import date
+from sqlalchemy import func, extract
+from datetime import datetime, date
 from pydantic import ValidationError
 
 from app.schemas.transaction import TransactionResponse, TransactionList, CreateTransactionSchema, UpdateTransactionSchema
@@ -173,3 +174,78 @@ async def delete_transaction(
         )
     
     return None
+
+
+@router.get("/stats/current-month")
+async def get_current_month_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """
+    Get current month income and expense statistics for the current user.
+    """
+    try:
+        print(f"Getting current month stats for user {current_user.id}")
+        
+        stats = transaction_service.get_current_month_stats(
+            db=db, 
+            user_id=current_user.id
+        )
+        
+        print(f"Current month stats endpoint returning: {stats}")
+        return stats
+        
+    except Exception as e:
+        print(f"Error in get_current_month_stats endpoint: {str(e)}")
+        # Return a safe fallback response
+        from datetime import datetime
+        now = datetime.now()
+        fallback_response = {
+            "income": 0,
+            "expenses": 0,
+            "net": 0,
+            "transaction_count": 0,
+            "month": now.month,
+            "year": now.year,
+            "error": "Failed to fetch current month statistics"
+        }
+        print(f"Returning fallback response: {fallback_response}")
+        return fallback_response
+
+
+@router.get("/stats/monthly")
+async def get_monthly_stats(
+    year: Optional[int] = Query(None, description="Year for statistics (default: current year)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Dict:
+    """
+    Get monthly income and expense statistics for the current user.
+    """
+    try:
+        print(f"Getting monthly stats for user {current_user.id}, year {year}")
+        
+        # Use the transaction service to get monthly stats
+        stats = transaction_service.get_monthly_stats(
+            db=db, 
+            user_id=current_user.id, 
+            year=year
+        )
+        
+        print(f"Monthly stats endpoint returning: {stats}")
+        return stats
+        
+    except Exception as e:
+        print(f"Error in get_monthly_stats endpoint: {str(e)}")
+        # Return a safe fallback response
+        current_year = year or datetime.now().year
+        fallback_response = {
+            "year": current_year,
+            "monthly_data": [{"month": i, "income": 0, "expense": 0} for i in range(1, 13)],
+            "total_income": 0,
+            "total_expense": 0,
+            "net_income": 0,
+            "error": "Failed to fetch monthly statistics"
+        }
+        print(f"Returning fallback response: {fallback_response}")
+        return fallback_response

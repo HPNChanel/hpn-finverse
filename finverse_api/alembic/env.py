@@ -13,10 +13,15 @@ sys.path.append(BASE_DIR)
 
 # Import the SQLAlchemy declarative Base and all models
 from app.db.session import Base
+
 # Import all models to ensure they are registered with Base.metadata
-# This is important for Alembic to detect all model changes
-from app.models import user, staking, transaction, financial_account
-from app.models import budget_plan, financial_goal
+# This is critical for Alembic to detect all model changes
+from app.models.user import User
+from app.models.staking import Stake
+from app.models.transaction import Transaction
+from app.models.financial_account import FinancialAccount
+from app.models.budget_plan import BudgetPlan
+from app.models.financial_goal import FinancialGoal
 
 # Import settings to get database URL
 from app.db.session import SQLALCHEMY_DATABASE_URL

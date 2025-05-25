@@ -14,8 +14,7 @@ import { Add as AddIcon } from '@mui/icons-material';
 import GoalCard from '../../components/shared/GoalCard';
 import GoalForm from '../../components/shared/GoalForm';
 import { useGoals } from '../../hooks';
-import type { FinancialGoal } from '../../utils/importFixes';
-import type { CreateGoalRequest, UpdateGoalRequest } from '../../services/goalService';
+import type { FinancialGoal, CreateGoalRequest, UpdateGoalRequest } from '../../types'; // Fix import paths
 import { EmptyState } from '../../components/shared';
 
 const Goals: React.FC = () => {
@@ -33,11 +32,14 @@ const Goals: React.FC = () => {
   // Get goals data and operations from custom hook
   const { goals, loading, error, createGoal, updateGoal, deleteGoal, getGoalById } = useGoals();
 
-  // Handle creating/updating a goal
+  // Handle creating/updating a goal with detailed logging
   const handleSubmitGoal = async (data: CreateGoalRequest | UpdateGoalRequest) => {
     setFormLoading(true);
     try {
+      console.log('Goals: Submitting goal data:', data);
+      
       if (editingGoal) {
+        console.log('Goals: Updating existing goal:', editingGoal.id);
         await updateGoal(editingGoal.id, data as UpdateGoalRequest);
         setSnackbar({
           open: true,
@@ -45,6 +47,7 @@ const Goals: React.FC = () => {
           severity: 'success'
         });
       } else {
+        console.log('Goals: Creating new goal');
         await createGoal(data as CreateGoalRequest);
         setSnackbar({
           open: true,
@@ -55,6 +58,7 @@ const Goals: React.FC = () => {
       setFormOpen(false);
       setEditingGoal(undefined);
     } catch (error) {
+      console.error('Goals: Error submitting goal:', error);
       setSnackbar({
         open: true,
         message: `Error: ${error instanceof Error ? error.message : 'Something went wrong'}`,
@@ -264,4 +268,4 @@ const Goals: React.FC = () => {
   );
 };
 
-export default Goals; 
+export default Goals;

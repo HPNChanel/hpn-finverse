@@ -1,6 +1,7 @@
 import api from './api';
 import axios from 'axios';
 import { handleErrorResponse } from '../utils/importFixes';
+import type { User } from '../types';
 
 export interface LoginRequest {
   username: string;
@@ -10,13 +11,13 @@ export interface LoginRequest {
 export interface TokenResponse {
   access_token: string;
   token_type: string;
+  refresh_token?: string;
 }
 
-// Updated to match backend expectations
 export interface RegisterRequest {
-  username: string;  // Changed back to username to match backend
+  username: string;
   password: string;
-  name: string; // Changed from full_name to name to match backend
+  name: string;
 }
 
 export interface RegisterResponse {
@@ -34,7 +35,6 @@ const authService = {
     } catch (error) {
       console.error('Registration API error:', error);
       
-      // Enhanced error handling for specific error types
       if (axios.isAxiosError(error)) {
         if (error.code === 'ECONNABORTED') {
           throw new Error('Registration request timed out. Please try again.');
@@ -61,7 +61,6 @@ const authService = {
    */
   login: async (data: LoginRequest): Promise<TokenResponse> => {
     try {
-      // Create form data for OAuth2 compatibility using URLSearchParams
       const formData = new URLSearchParams();
       formData.append('username', data.username);
       formData.append('password', data.password);
@@ -72,9 +71,13 @@ const authService = {
         },
       });
       
-      // Store the token in localStorage (the auth context will handle the UI state)
       if (response.data.access_token) {
         localStorage.setItem('token', response.data.access_token);
+        api.defaults.headers.common['Authorization'] = `Bearer ${response.data.access_token}`;
+        
+        if (response.data.refresh_token) {
+          localStorage.setItem('refreshToken', response.data.refresh_token);
+        }
       }
       
       return response.data;
@@ -98,11 +101,79 @@ const authService = {
   },
 
   /**
+   * Get current user profile
+   */
+  getCurrentUser: async (): Promise<User> => {
+    try {
+      const response = await api.get<User>('/users/me');
+      return response.data;
+    } catch (error) {
+      console.error('Get current user error:', error);
+      
+      // Handle specific error cases
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          // Token is expired or invalid, clear storage
+          localStorage.removeItem('token');
+          localStorage.removeItem('refreshToken');
+          delete api.defaults.headers.common['Authorization'];
+          throw new Error('Authentication expired. Please log in again.');
+        }
+        if (error.response?.status === 404) {
+          throw new Error('User profile not found.');
+        }
+        if (!error.response) {
+          throw new Error('Network error. Please check your connection.');
+        }
+      }
+      
+      throw new Error(handleErrorResponse(error));
+    }
+  },
+
+  /**
+   * Refresh access token using refresh token
+   */
+  refreshToken: async (): Promise<TokenResponse> => {
+    const refreshToken = localStorage.getItem('refreshToken');
+    
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    try {
+      const response = await api.post<TokenResponse>('/auth/refresh', {
+        refresh_token: refreshToken
+      });
+
+      if (response.data.access_token) {
+        localStorage.setItem('token', response.data.access_token);
+        api.defaults.headers.common['Authorization'] = `Bearer ${response.data.access_token}`;
+        
+        if (response.data.refresh_token) {
+          localStorage.setItem('refreshToken', response.data.refresh_token);
+        }
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      delete api.defaults.headers.common['Authorization'];
+      
+      throw new Error(handleErrorResponse(error));
+    }
+  },
+
+  /**
    * Log out the current user
    */
   logout: (): void => {
     localStorage.removeItem('token');
-    // Redirect to login page
+    localStorage.removeItem('refreshToken');
+    delete api.defaults.headers.common['Authorization'];
     window.location.href = '/login';
   },
 

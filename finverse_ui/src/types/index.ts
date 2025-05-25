@@ -17,6 +17,7 @@ export interface Account {
 
 export interface AccountListResponse {
   accounts: Account[];
+  total: number;
 }
 
 export interface AccountSummary {
@@ -37,13 +38,41 @@ export interface FinancialGoal {
   start_date: string;
   target_date: string;
   description?: string;
-  priority: number;
-  status: number;
-  progress_percentage: number;
+  priority: number; // 1=low, 2=medium, 3=high
+  status: number; // 1=ongoing, 2=completed, 3=cancelled
+  progress_percentage?: number;
   icon?: string;
   color?: string;
   created_at: string;
   updated_at?: string;
+  user_id?: number;
+}
+
+// Add export for goal-related types
+export interface CreateGoalRequest {
+  name: string;
+  target_amount: number;
+  current_amount?: number;
+  start_date: string;
+  target_date: string;
+  description?: string;
+  priority?: number;
+  status?: number;
+  icon?: string;
+  color?: string;
+}
+
+export interface UpdateGoalRequest {
+  name?: string;
+  target_amount?: number;
+  current_amount?: number;
+  start_date?: string;
+  target_date?: string;
+  description?: string;
+  priority?: number;
+  status?: number;
+  icon?: string;
+  color?: string;
 }
 
 // Transaction-related types
@@ -65,7 +94,7 @@ export interface Transaction {
   to_account_id?: number;
   amount: number;
   timestamp?: string;
-  transaction_type: string;
+  transaction_type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   category?: string;
   description?: string;
   created_at: string;
@@ -74,6 +103,7 @@ export interface Transaction {
 
 export interface TransactionListResponse {
   transactions: Transaction[];
+  total: number;
 }
 
 // Budget-related types
@@ -108,20 +138,14 @@ export interface Stake {
 }
 
 export interface StakingProfile {
-  account: {
-    id: number;
-    name: string;
-    address: string;
-    balance: number;
-  };
-  status: {
-    total_staked: number;
-    locked_until?: string;
-  };
-  rewards: {
-    earned: number;
-    last_claim?: string;
-  };
+  id: number;
+  validator_address: string;
+  validator_name: string;
+  staked_amount: number;
+  rewards_earned: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // User-related types
@@ -132,6 +156,19 @@ export interface UserProfile {
   name?: string;
   created_at: string;
   updated_at?: string;
+}
+
+// Enhanced user type for authenticated user
+export interface User {
+  id: number;
+  username: string;
+  email?: string;
+  full_name?: string;
+  name?: string;
+  avatar_url?: string;
+  created_at: string;
+  updated_at?: string;
+  is_active?: boolean;
 }
 
 // Navigation-related types
@@ -146,9 +183,6 @@ export interface NavItem {
 }
 
 export interface BreadcrumbItem {
-  label: string;
-  to?: string;
-  path?: string; // Added path property for PageContainer component
   icon?: React.ReactNode;
 }
 

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import goalService from '../services/goalService';
-import type { FinancialGoal } from '../utils/importFixes';
-import type { CreateGoalRequest, UpdateGoalRequest } from '../services/goalService';
+import type { FinancialGoal, CreateGoalRequest, UpdateGoalRequest } from '../types'; // Fix import paths
 
 interface UseGoalsReturn {
   goals: FinancialGoal[];
@@ -23,9 +22,12 @@ export const useGoals = (): UseGoalsReturn => {
     setLoading(true);
     setError(null);
     try {
+      console.log('useGoals: Fetching goals...');
       const fetchedGoals = await goalService.getGoals();
+      console.log('useGoals: Fetched goals:', fetchedGoals);
       setGoals(fetchedGoals);
     } catch (error) {
+      console.error('useGoals: Error fetching goals:', error);
       setError(error instanceof Error ? error.message : 'Failed to fetch goals');
     } finally {
       setLoading(false);
@@ -38,10 +40,13 @@ export const useGoals = (): UseGoalsReturn => {
 
   const createGoal = async (goalData: CreateGoalRequest): Promise<FinancialGoal> => {
     try {
+      console.log('useGoals: Creating goal with data:', goalData);
       const newGoal = await goalService.createGoal(goalData);
+      console.log('useGoals: Created goal:', newGoal);
       setGoals(prevGoals => [...prevGoals, newGoal]);
       return newGoal;
     } catch (error) {
+      console.error('useGoals: Error creating goal:', error);
       setError(error instanceof Error ? error.message : 'Failed to create goal');
       throw error;
     }
@@ -91,4 +96,4 @@ export const useGoals = (): UseGoalsReturn => {
   };
 };
 
-export default useGoals; 
+export default useGoals;

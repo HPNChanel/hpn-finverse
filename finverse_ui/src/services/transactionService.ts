@@ -1,4 +1,5 @@
 import api from './api';
+import axios from 'axios';
 import { handleErrorResponse } from '../utils/importFixes';
 import type { Transaction, TransactionListResponse } from '../types';
 
@@ -29,6 +30,39 @@ export interface TransactionFilters {
   date_from?: string;
   date_to?: string;
   search?: string;
+}
+
+interface MonthlyStats {
+  year: number;
+  monthly_data: Array<{
+    month: number;
+    income: number;
+    expense: number;
+  }>;
+  total_income: number;
+  total_expense: number;
+  net_income: number;
+}
+
+interface MonthlyStatsResponse {
+  year: number;
+  monthly_data: Array<{
+    month: number;
+    income: number;
+    expense: number;
+  }>;
+  total_income: number;
+  total_expense: number;
+  net_income: number;
+}
+
+interface CurrentMonthStats {
+  income: number;
+  expenses: number;
+  net: number;
+  transaction_count: number;
+  month: number;
+  year: number;
 }
 
 const transactionService = {
@@ -92,6 +126,21 @@ const transactionService = {
   },
 
   /**
+   * Get current month income and expense statistics
+   */
+  getCurrentMonthStats: async (): Promise<CurrentMonthStats> => {
+    try {
+      console.log('Calling getCurrentMonthStats API...');
+      const response = await api.get<CurrentMonthStats>('/transactions/stats/current-month');
+      console.log('getCurrentMonthStats API response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Get current month stats error:', error);
+      throw new Error(handleErrorResponse(error));
+    }
+  },
+
+  /**
    * Create a new transaction
    */
   createTransaction: async (data: CreateTransactionRequest): Promise<Transaction> => {
@@ -109,6 +158,11 @@ const transactionService = {
       console.log("Creating transaction with payload:", JSON.stringify(payload, null, 2));
       
       const response = await api.post<Transaction>('/transactions', payload);
+      console.log("Transaction created successfully:", response.data);
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('transactionCreated', { detail: response.data }));
+      
       return response.data;
     } catch (error) {
       console.error('Error creating transaction:', error);
@@ -140,7 +194,13 @@ const transactionService = {
    */
   updateTransaction: async (id: number, data: UpdateTransactionRequest): Promise<Transaction> => {
     try {
+      console.log(`Updating transaction ${id} with data:`, data);
       const response = await api.put<Transaction>(`/transactions/${id}`, data);
+      console.log("Transaction updated successfully:", response.data);
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('transactionUpdated', { detail: response.data }));
+      
       return response.data;
     } catch (error) {
       console.error(`Error updating transaction #${id}:`, error);
@@ -153,13 +213,33 @@ const transactionService = {
    */
   deleteTransaction: async (id: number): Promise<boolean> => {
     try {
+      console.log(`Deleting transaction ${id}...`);
       await api.delete(`/transactions/${id}`);
+      console.log("Transaction deleted successfully");
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('transactionDeleted', { detail: { id } }));
+      
       return true;
     } catch (error) {
       console.error(`Error deleting transaction #${id}:`, error);
       throw new Error(handleErrorResponse(error));
     }
-  }
+  },
+
+  /**
+   * Get monthly income and expense statistics
+   */
+  getMonthlyStats: async (year?: number): Promise<MonthlyStatsResponse> => {
+    try {
+      const params = year ? { year: year.toString() } : {};
+      const response = await api.get<MonthlyStatsResponse>('/transactions/stats/monthly', { params });
+      return response.data;
+    } catch (error) {
+      console.error('Get monthly stats error:', error);
+      throw new Error(handleErrorResponse(error));
+    }
+  },
 };
 
 export default transactionService;

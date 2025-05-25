@@ -18,9 +18,9 @@ import {
   LineElement,
   Title,
   Tooltip,
-  Legend,
-  ChartOptions
+  Legend
 } from 'chart.js';
+import type { ChartOptions } from 'chart.js';
 import { useFormatters } from '../../hooks';
 import { useCurrency } from '../../contexts/CurrencyContext';
 import transactionService from '../../services/transactionService';
@@ -59,7 +59,8 @@ const ExpenseIncomeChart: React.FC<ExpenseIncomeChartProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [timeFrame, setTimeFrame] = useState<TimeFrame>('month');
-  
+  const [selectedYear] = useState<number>(new Date().getFullYear()); // Add selectedYear state
+
   const handleTimeFrameChange = (
     _: React.MouseEvent<HTMLElement>,
     newTimeFrame: TimeFrame | null,
@@ -75,86 +76,93 @@ const ExpenseIncomeChart: React.FC<ExpenseIncomeChartProps> = ({
         setLoading(true);
         setError(null);
         
-        // Get transactions data from the API
-        const transactions = await transactionService.getHistory();
+        const stats = await transactionService.getMonthlyStats(selectedYear);
         
         // Process and group transactions based on timeFrame
         let groupedData: MonthlyData[] = [];
         
-        if (transactions && transactions.length > 0) {
-          // Filter transactions by time period
-          const now = new Date();
-          const filteredTransactions = transactions.filter(tx => {
-            const txDate = new Date(tx.timestamp || tx.created_at);
-            if (timeFrame === 'week') {
-              // Last 7 days
-              const oneWeekAgo = new Date();
-              oneWeekAgo.setDate(now.getDate() - 7);
-              return txDate >= oneWeekAgo;
-            } else if (timeFrame === 'month') {
-              // Current month
-              const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-              return txDate >= startOfMonth;
-            } else {
-              // Current year
-              const startOfYear = new Date(now.getFullYear(), 0, 1);
-              return txDate >= startOfYear;
-            }
-          });
-          
-          // Create a map to aggregate data
-          const aggregateMap = new Map<string, { income: number, expense: number }>();
-          
-          // Process each transaction
-          filteredTransactions.forEach(tx => {
-            const txDate = new Date(tx.timestamp || tx.created_at);
-            let periodKey: string;
+        if (stats && stats.monthly_data && stats.monthly_data.length > 0) {
+          // Convert backend monthly data to chart format
+          if (timeFrame === 'year') {
+            // Use monthly data directly for year view
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             
-            if (timeFrame === 'week') {
-              // Group by day of week
-              const day = txDate.toLocaleDateString('en-US', { weekday: 'short' });
-              periodKey = day;
-            } else if (timeFrame === 'month') {
-              // Group by day of month
-              const day = txDate.getDate().toString();
-              periodKey = day;
-            } else {
-              // Group by month
-              const month = txDate.toLocaleDateString('en-US', { month: 'short' });
-              periodKey = month;
-            }
-            
-            // Initialize if not exists
-            if (!aggregateMap.has(periodKey)) {
-              aggregateMap.set(periodKey, { income: 0, expense: 0 });
-            }
-            
-            const current = aggregateMap.get(periodKey)!;
-            
-            // Update income or expense
-            if (tx.transaction_type === 'INCOME') {
-              current.income += tx.amount;
-            } else if (tx.transaction_type === 'EXPENSE') {
-              current.expense += tx.amount;
-            }
-          });
-          
-          // Convert map to array and sort it
-          groupedData = Array.from(aggregateMap.entries()).map(([period, values]) => ({
-            month: period,
-            income: values.income,
-            expense: values.expense
-          }));
-          
-          // Sort based on time period
-          if (timeFrame === 'week') {
-            const daysOrder = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            groupedData.sort((a, b) => daysOrder.indexOf(a.month) - daysOrder.indexOf(b.month));
-          } else if (timeFrame === 'month') {
-            groupedData.sort((a, b) => parseInt(a.month) - parseInt(b.month));
+            groupedData = stats.monthly_data.map((monthData, index) => ({
+              month: monthNames[index] || `Month ${monthData.month}`,
+              income: monthData.income,
+              expense: monthData.expense
+            }));
           } else {
-            const monthsOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            groupedData.sort((a, b) => monthsOrder.indexOf(a.month) - monthsOrder.indexOf(b.month));
+            // For week/month views, get transactions and process as before
+            const transactions = await transactionService.getTransactions();
+            
+            if (transactions && transactions.length > 0) {
+              // Filter transactions by time period
+              const now = new Date();
+              const filteredTransactions = transactions.filter(tx => {
+                const txDate = new Date(tx.transaction_date || tx.created_at);
+                if (timeFrame === 'week') {
+                  // Last 7 days
+                  const oneWeekAgo = new Date();
+                  oneWeekAgo.setDate(now.getDate() - 7);
+                  return txDate >= oneWeekAgo;
+                } else if (timeFrame === 'month') {
+                  // Current month
+                  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                  return txDate >= startOfMonth;
+                }
+                return false;
+              });
+              
+              // Create a map to aggregate data
+              const aggregateMap = new Map<string, { income: number, expense: number }>();
+              
+              // Process each transaction
+              filteredTransactions.forEach(tx => {
+                const txDate = new Date(tx.transaction_date || tx.created_at);
+                let periodKey: string;
+                
+                if (timeFrame === 'week') {
+                  // Group by day of week
+                  const day = txDate.toLocaleDateString('en-US', { weekday: 'short' });
+                  periodKey = day;
+                } else if (timeFrame === 'month') {
+                  // Group by day of month
+                  const day = txDate.getDate().toString();
+                  periodKey = day;
+                }
+                
+                // Initialize if not exists
+                if (!aggregateMap.has(periodKey)) {
+                  aggregateMap.set(periodKey, { income: 0, expense: 0 });
+                }
+                
+                const current = aggregateMap.get(periodKey)!;
+                
+                // Update income or expense based on transaction type
+                if (tx.transaction_type === 1 || tx.transaction_type === 'INCOME') {
+                  current.income += tx.amount;
+                } else if (tx.transaction_type === 0 || tx.transaction_type === 'EXPENSE') {
+                  current.expense += tx.amount;
+                }
+              });
+              
+              // Convert map to array and sort it
+              groupedData = Array.from(aggregateMap.entries()).map(([period, values]) => ({
+                month: period,
+                income: values.income,
+                expense: values.expense
+              }));
+              
+              // Sort based on time period
+              if (timeFrame === 'week') {
+                const daysOrder = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                groupedData.sort((a, b) => daysOrder.indexOf(a.month) - daysOrder.indexOf(b.month));
+              } else if (timeFrame === 'month') {
+                groupedData.sort((a, b) => parseInt(a.month) - parseInt(b.month));
+              }
+            }
           }
         }
         
@@ -168,7 +176,22 @@ const ExpenseIncomeChart: React.FC<ExpenseIncomeChartProps> = ({
     };
     
     fetchData();
-  }, [timeFrame, currency]); // Refetch when timeFrame or currency changes
+
+    // Listen for transaction changes
+    const handleTransactionChange = () => {
+      fetchData();
+    };
+
+    window.addEventListener('transactionCreated', handleTransactionChange);
+    window.addEventListener('transactionUpdated', handleTransactionChange);
+    window.addEventListener('transactionDeleted', handleTransactionChange);
+
+    return () => {
+      window.removeEventListener('transactionCreated', handleTransactionChange);
+      window.removeEventListener('transactionUpdated', handleTransactionChange);
+      window.removeEventListener('transactionDeleted', handleTransactionChange);
+    };
+  }, [timeFrame, currency, selectedYear]); // Include selectedYear in dependencies
   
   // Format data for chart
   const chartData = {

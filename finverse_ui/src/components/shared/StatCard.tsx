@@ -7,7 +7,8 @@ import {
   Skeleton,
   useTheme,
   Tooltip,
-  IconButton
+  IconButton,
+  Stack,
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -48,8 +49,8 @@ const StatCard: React.FC<StatCardProps> = ({
       return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
       }).format(value);
     }
     
@@ -59,17 +60,19 @@ const StatCard: React.FC<StatCardProps> = ({
   const renderTrendIcon = () => {
     if (trend === undefined) return null;
     
+    const iconProps = { fontSize: 'small' as const };
+    
     if (trend > 0) {
-      return <TrendingUpIcon fontSize="small" sx={{ color: theme.palette.success.main }} />;
+      return <TrendingUpIcon {...iconProps} sx={{ color: 'success.main' }} />;
     } else if (trend < 0) {
-      return <TrendingDownIcon fontSize="small" sx={{ color: theme.palette.error.main }} />;
+      return <TrendingDownIcon {...iconProps} sx={{ color: 'error.main' }} />;
     } else {
-      return <TrendingFlatIcon fontSize="small" sx={{ color: theme.palette.text.secondary }} />;
+      return <TrendingFlatIcon {...iconProps} sx={{ color: 'text.secondary' }} />;
     }
   };
 
   const trendText = trend !== undefined 
-    ? `${trend > 0 ? '+' : ''}${trend}% from previous period` 
+    ? `${trend > 0 ? '+' : ''}${trend.toFixed(1)}%` 
     : '';
 
   return (
@@ -79,93 +82,102 @@ const StatCard: React.FC<StatCardProps> = ({
         display: 'flex',
         flexDirection: 'column',
         cursor: onClick ? 'pointer' : 'default',
-        transition: 'transform 0.2s, box-shadow 0.2s',
-        '&:hover': onClick ? {
-          transform: 'translateY(-4px)',
-          boxShadow: theme.shadows[4],
-        } : {},
-        borderLeft: 4,
-        borderColor: `${color}.main`,
+        position: 'relative',
+        overflow: 'hidden',
+        '&:before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
+          backgroundColor: `${color}.main`,
+        },
       }}
       onClick={onClick}
     >
-      <CardContent sx={{ flexGrow: 1, p: 2.5 }}>
-        <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-          <Box>
-            <Box display="flex" alignItems="center">
-              <Typography 
-                variant="subtitle2" 
-                color="textSecondary" 
-                gutterBottom
-                sx={{ fontWeight: 500 }}
-              >
-                {title}
-              </Typography>
-              
-              {tooltipText && (
-                <Tooltip title={tooltipText} arrow placement="top">
-                  <IconButton size="small" sx={{ ml: 0.5, p: 0 }}>
-                    <InfoOutlinedIcon fontSize="small" color="action" />
-                  </IconButton>
-                </Tooltip>
-              )}
+      <CardContent sx={{ flexGrow: 1, p: 3 }}>
+        <Stack spacing={2}>
+          {/* Header */}
+          <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+            <Box>
+              <Stack direction="row" alignItems="center" spacing={0.5}>
+                <Typography 
+                  variant="subtitle2" 
+                  color="text.secondary" 
+                  fontWeight={500}
+                >
+                  {title}
+                </Typography>
+                {tooltipText && (
+                  <Tooltip title={tooltipText} arrow placement="top">
+                    <IconButton size="small" sx={{ p: 0, ml: 0.5 }}>
+                      <InfoOutlinedIcon fontSize="small" color="action" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Stack>
             </Box>
             
-            {isLoading ? (
-              <Skeleton variant="text" width={120} height={40} />
-            ) : (
-              <Typography 
-                variant="h4" 
-                component="div" 
+            {icon && (
+              <Box 
                 sx={{ 
-                  fontWeight: 600,
-                  color: theme.palette.text.primary,
-                  my: 0.5
+                  width: 40,
+                  height: 40,
+                  borderRadius: 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: `${color}.light`,
+                  color: `${color}.main`,
                 }}
               >
-                {formatValue()}
-              </Typography>
-            )}
-            
-            {(subtitle || trend !== undefined) && (
-              <Box display="flex" alignItems="center" mt={0.5}>
-                {renderTrendIcon()}
-                
-                {isLoading ? (
-                  <Skeleton variant="text" width={80} />
-                ) : (
-                  <Typography 
-                    variant="body2" 
-                    color={
-                      trend > 0 
-                        ? 'success.main' 
-                        : trend < 0 
-                          ? 'error.main' 
-                          : 'textSecondary'
-                    }
-                    sx={{ ml: trend !== undefined ? 0.5 : 0 }}
-                  >
-                    {subtitle || trendText}
-                  </Typography>
-                )}
+                {icon}
               </Box>
             )}
           </Box>
           
-          {icon && (
-            <Box 
-              sx={{ 
-                display: 'flex',
-                p: 1,
-                borderRadius: 1,
-                bgcolor: `${color}.lighter`,
-                color: `${color}.main`,
-              }}
+          {/* Value */}
+          {isLoading ? (
+            <Skeleton variant="text" width="60%" height={40} />
+          ) : (
+            <Typography 
+              variant="h4" 
+              component="div" 
+              fontWeight={700}
+              color="text.primary"
             >
-              {icon}
-            </Box>
+              {formatValue()}
+            </Typography>
           )}
-        </Box>
+          
+          {/* Trend and subtitle */}
+          {(subtitle || trend !== undefined) && (
+            <Stack direction="row" alignItems="center" spacing={1}>
+              {renderTrendIcon()}
+              
+              {isLoading ? (
+                <Skeleton variant="text" width={80} />
+              ) : (
+                <Typography 
+                  variant="body2" 
+                  color={
+                    trend !== undefined
+                      ? trend > 0 
+                        ? 'success.main' 
+                        : trend < 0 
+                          ? 'error.main' 
+                          : 'text.secondary'
+                      : 'text.secondary'
+                  }
+                  fontWeight={500}
+                >
+                  {subtitle || trendText}
+                </Typography>
+              )}
+            </Stack>
+          )}
+        </Stack>
       </CardContent>
     </Card>
   );

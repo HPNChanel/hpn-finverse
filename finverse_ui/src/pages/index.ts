@@ -11,7 +11,6 @@ export { default as Profile } from './profile/Profile';
 export { default as LandingPage } from './landing/LandingPage';
 export { default as Goals } from './goals/Goals';
 export { default as RecurringTransactions } from './dashboard/RecurringTransactions';
-export { default as TrendsPage } from './dashboard/TrendsPage';
 export { default as UserSettings } from './settings/UserSettings';
 export { default as CreateTransaction } from './transactions/CreateTransaction';
 export { default as TransactionHistory } from './transactions/TransactionHistory';

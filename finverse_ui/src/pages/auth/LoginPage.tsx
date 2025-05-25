@@ -55,7 +55,10 @@ const LoginPage: React.FC = () => {
     
     try {
       const response = await authService.login({ username, password });
-      login(response.access_token);
+      
+      // Use the context login method which handles token storage and state
+      login(response.access_token, response.refresh_token);
+      
       setOpenSnackbar(true);
       setTimeout(() => navigate('/dashboard'), 1500);
     } catch (err) {

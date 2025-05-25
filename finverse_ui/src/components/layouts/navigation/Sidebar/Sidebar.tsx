@@ -22,7 +22,6 @@ import {
   Savings as BudgetIcon,
   Flag as GoalsIcon,
   TrendingUp as StakingIcon,
-  InsertChart as TrendsIcon,
   Person as ProfileIcon,
   Settings as SettingsIcon,
   ChevronLeft as ChevronLeftIcon,
@@ -42,9 +41,6 @@ const navItems = [
   { id: 'budget', label: 'Budget', path: '/budget', icon: <BudgetIcon /> },
   { id: 'goals', label: 'Goals', path: '/goals', icon: <GoalsIcon /> },
   { id: 'staking', label: 'Staking', path: '/staking', icon: <StakingIcon /> },
-  { id: 'trends', label: 'Trends', path: '/trends', icon: <TrendsIcon /> },
-  { id: 'profile', label: 'Profile', path: '/profile', icon: <ProfileIcon /> },
-  { id: 'settings', label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
 ];
 
 interface SidebarProps {
@@ -60,29 +56,39 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const theme = useTheme();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   
-  // Get initials for avatar
+  // Get initials for avatar with loading fallback
   const getUserInitials = (): string => {
+    if (isLoading) return '...';
     if (!user) return '?';
     
-    if (user.name) {
-      const nameParts = user.name.split(' ');
+    // Try full_name first, then name, then username, then email
+    const displayName = user.full_name || user.name || user.username || user.email;
+    
+    if (displayName) {
+      const nameParts = displayName.split(' ');
       if (nameParts.length > 1) {
         return `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase();
       }
-      return user.name[0].toUpperCase();
-    }
-    
-    if (user.username) {
-      return user.username[0].toUpperCase();
-    }
-    
-    if (user.email) {
-      return user.email[0].toUpperCase();
+      return displayName[0].toUpperCase();
     }
     
     return '?';
+  };
+  
+  // Get display name for user with loading fallback
+  const getDisplayName = (): string => {
+    if (isLoading) return 'Loading...';
+    if (!user) return 'Guest';
+    return user.full_name || user.name || user.username || 'User';
+  };
+  
+  // Get user email with loading fallback
+  const getUserEmail = (): string => {
+    if (isLoading) return 'Loading...';
+    if (!user) return '';
+    return user.username || 'user';
   };
   
   return (
@@ -110,24 +116,35 @@ const Sidebar: React.FC<SidebarProps> = ({
         {/* User profile section */}
         {isSidebarOpen && (
           <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
-            <Avatar 
-              sx={{ 
-                width: 40, 
-                height: 40, 
-                bgcolor: 'primary.main',
-                fontSize: '1rem',
-                fontWeight: 'bold',
-                mr: 2
-              }}
-            >
-              {getUserInitials()}
-            </Avatar>
+            {user?.avatar_url ? (
+              <Avatar 
+                src={user.avatar_url}
+                sx={{ 
+                  width: 40, 
+                  height: 40, 
+                  mr: 2
+                }}
+              />
+            ) : (
+              <Avatar 
+                sx={{ 
+                  width: 40, 
+                  height: 40, 
+                  bgcolor: isLoading ? 'grey.400' : 'primary.main',
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                  mr: 2
+                }}
+              >
+                {getUserInitials()}
+              </Avatar>
+            )}
             <Box sx={{ minWidth: 0 }}>
               <Typography variant="subtitle2" fontWeight={600} noWrap>
-                {user?.name || user?.username || 'User'}
+                {getDisplayName()}
               </Typography>
               <Typography variant="caption" color="text.secondary" noWrap>
-                {user?.email || ''}
+                {getUserEmail()}
               </Typography>
             </Box>
           </Box>
@@ -135,7 +152,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         
         <Divider />
         
-        {/* Navigation list */}
+        {/* Always show navigation list */}
         <List sx={{ px: 1, py: 1.5 }}>
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;

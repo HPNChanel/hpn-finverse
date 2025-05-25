@@ -25,6 +25,8 @@ def run_migrations():
         
         if result.returncode == 0:
             print("Migration completed successfully!")
+            print("\nVerifying migration status...")
+            check_migration_status()
         else:
             print("Migration failed with error code:", result.returncode)
             print("Error output:")
@@ -55,9 +57,39 @@ def check_migration_status():
         print("Current migration status:")
         print(result.stdout or "No migrations applied yet")
         
+        # Also check history
+        history_result = subprocess.run(
+            ["alembic", "history", "--verbose"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        print("\nMigration history:")
+        print(history_result.stdout or "No migration history")
+        
     except subprocess.CalledProcessError as e:
         print(f"Status check failed: {e}")
         print(e.stderr)
+
+
+def show_pending_migrations():
+    """Show any pending migrations"""
+    print("Checking for pending migrations...")
+    
+    try:
+        result = subprocess.run(
+            ["alembic", "show", "head"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        print("Latest migration:")
+        print(result.stdout)
+        
+    except subprocess.CalledProcessError as e:
+        print(f"Could not check pending migrations: {e}")
     
 
 if __name__ == "__main__":
@@ -65,13 +97,21 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
     
+    print("=== FinVerse Database Migration Tool ===")
+    print()
+    
     # Check current status
     check_migration_status()
+    print()
+    
+    # Show pending migrations
+    show_pending_migrations()
+    print()
     
     # Prompt user to confirm migration
-    response = input("\nDo you want to run the migration? (y/n): ")
+    response = input("Do you want to run the migration? (y/n): ")
     
     if response.lower() in ('y', 'yes'):
         run_migrations()
     else:
-        print("Migration aborted.") 
+        print("Migration aborted.")

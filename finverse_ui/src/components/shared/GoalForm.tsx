@@ -21,15 +21,14 @@ import { Close as CloseIcon } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import type { FinancialGoal } from '../../utils/importFixes';
-import { useCurrency } from '../../hooks/useCurrency';
+import type { FinancialGoal } from '../../types'; // Fix import path
+import { useCurrency } from '../../contexts/CurrencyContext'; // Fix import path
 
 // Zod schema for validating financial goal form
 const goalSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255, 'Name must be less than 255 characters'),
   target_amount: z.number().positive('Target amount must be positive'),
-  current_amount: z.number().min(0, 'Current amount cannot be negative')
-    .refine(val => val !== undefined, { message: 'Current amount is required' }),
+  current_amount: z.number().min(0, 'Current amount cannot be negative').optional().default(0),
   start_date: z.string().refine(val => !isNaN(Date.parse(val)), {
     message: 'Start date must be a valid date'
   }),
@@ -37,16 +36,14 @@ const goalSchema = z.object({
     message: 'Target date must be a valid date'
   }),
   description: z.string().optional(),
-  priority: z.number().min(1).max(3),
-  status: z.number().min(1).max(3),
-  icon: z.string().optional(),
-  color: z.string().optional().refine(val => !val || /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(val), {
-    message: 'Color must be a valid hex color'
-  })
-}).refine(data => new Date(data.target_date) >= new Date(data.start_date), {
+  priority: z.number().min(1).max(3).default(2),
+  status: z.number().min(1).max(3).default(1),
+  icon: z.string().optional().default('🎯'),
+  color: z.string().optional().default('#1976d2')
+}).refine(data => new Date(data.target_date) > new Date(data.start_date), {
   message: 'Target date must be after start date',
   path: ['target_date']
-}).refine(data => data.current_amount <= data.target_amount, {
+}).refine(data => (data.current_amount || 0) <= data.target_amount, {
   message: 'Current amount cannot exceed target amount',
   path: ['current_amount']
 });
@@ -80,45 +77,95 @@ const GoalForm: React.FC<GoalFormProps> = ({
   goal,
   isLoading = false 
 }) => {
-  const { currency, currencySymbol } = useCurrency();
+  const { formatCurrency } = useCurrency();
   
-  // Default values for the form
-  const defaultValues: Partial<GoalFormData> = {
+  // Default values for the form - ensure all fields have proper defaults
+  const getDefaultValues = (): GoalFormData => ({
     name: goal?.name || '',
-    target_amount: goal?.target_amount || 0,
+    target_amount: goal?.target_amount || 1000,
     current_amount: goal?.current_amount || 0,
     start_date: goal ? formatDateForInput(goal.start_date) : formatDateForInput(new Date().toISOString()),
     target_date: goal ? formatDateForInput(goal.target_date) : '',
     description: goal?.description || '',
     priority: goal?.priority || 2,
     status: goal?.status || 1,
-    icon: goal?.icon || '',
+    icon: goal?.icon || '🎯',
     color: goal?.color || '#1976d2'
-  };
+  });
 
   // React Hook Form setup with Zod resolver
   const { 
     control, 
     handleSubmit, 
     formState: { errors },
-    reset
+    reset,
+    watch,
+    setValue
   } = useForm<GoalFormData>({
     resolver: zodResolver(goalSchema),
-    defaultValues,
+    defaultValues: getDefaultValues(),
     mode: 'onChange'
   });
 
-  // Handle the form submission
+  // Watch target_amount to update current_amount max validation
+  const targetAmount = watch('target_amount');
+  const currentAmount = watch('current_amount');
+  
+  // Handle the form submission with detailed logging and validation
   const onFormSubmit = async (data: GoalFormData) => {
-    await onSubmit(data);
+    try {
+      console.log('GoalForm: Submitting form with data:', data);
+      
+      // Additional frontend validation
+      const startDate = new Date(data.start_date);
+      const targetDate = new Date(data.target_date);
+      
+      if (targetDate <= startDate) {
+        throw new Error('Target date must be after start date');
+      }
+      
+      if ((data.current_amount || 0) > data.target_amount) {
+        throw new Error('Current amount cannot exceed target amount');
+      }
+      
+      // Format data for API - ensure proper types
+      const formattedData = {
+        name: data.name.trim(),
+        target_amount: Number(data.target_amount),
+        current_amount: Number(data.current_amount || 0),
+        start_date: data.start_date,
+        target_date: data.target_date,
+        description: data.description?.trim() || undefined,
+        priority: Number(data.priority),
+        status: Number(data.status),
+        icon: data.icon || '🎯',
+        color: data.color || '#1976d2'
+      };
+      
+      console.log('GoalForm: Formatted data for API:', formattedData);
+      
+      await onSubmit(formattedData);
+    } catch (error) {
+      console.error('GoalForm: Error submitting form:', error);
+      throw error;
+    }
   };
 
-  // Reset form on open and when goal changes
+  // Reset form when dialog opens or goal changes
   useEffect(() => {
     if (open) {
-      reset(defaultValues);
+      const defaults = getDefaultValues();
+      console.log('GoalForm: Resetting form with defaults:', defaults);
+      reset(defaults);
     }
-  }, [open, reset, defaultValues]);
+  }, [open, goal, reset]);
+
+  // Auto-adjust current_amount if it exceeds target_amount
+  useEffect(() => {
+    if (currentAmount > targetAmount) {
+      setValue('current_amount', targetAmount);
+    }
+  }, [targetAmount, currentAmount, setValue]);
 
   return (
     <Dialog 
@@ -151,6 +198,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
                     helperText={errors.name?.message}
                     required
                     disabled={isLoading}
+                    placeholder="Enter your goal name"
                   />
                 )}
               />
@@ -170,11 +218,16 @@ const GoalForm: React.FC<GoalFormProps> = ({
                     error={!!errors.target_amount}
                     helperText={errors.target_amount?.message}
                     InputProps={{
-                      startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>,
+                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
                     }}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
+                    value={field.value || ''}
+                    onChange={(e) => {
+                      const value = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                      field.onChange(value);
+                    }}
                     required
                     disabled={isLoading}
+                    inputProps={{ min: 1, step: 0.01 }}
                   />
                 )}
               />
@@ -192,13 +245,17 @@ const GoalForm: React.FC<GoalFormProps> = ({
                     type="number"
                     fullWidth
                     error={!!errors.current_amount}
-                    helperText={errors.current_amount?.message}
+                    helperText={errors.current_amount?.message || `Max: ${formatCurrency(targetAmount)}`}
                     InputProps={{
-                      startAdornment: <InputAdornment position="start">{currencySymbol}</InputAdornment>,
+                      startAdornment: <InputAdornment position="start">$</InputAdornment>,
                     }}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
-                    required
+                    value={field.value || ''}
+                    onChange={(e) => {
+                      const value = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                      field.onChange(Math.min(value, targetAmount)); // Auto-cap at target amount
+                    }}
                     disabled={isLoading}
+                    inputProps={{ min: 0, max: targetAmount, step: 0.01 }}
                   />
                 )}
               />
@@ -258,7 +315,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
                       {...field}
                       labelId="priority-label"
                       label="Priority"
-                      onChange={(e) => field.onChange(Number(e.target.value))}
+                      value={field.value || 2}
                     >
                       <MenuItem value={1}>Low</MenuItem>
                       <MenuItem value={2}>Medium</MenuItem>
@@ -284,7 +341,7 @@ const GoalForm: React.FC<GoalFormProps> = ({
                       {...field}
                       labelId="status-label"
                       label="Status"
-                      onChange={(e) => field.onChange(Number(e.target.value))}
+                      value={field.value || 1}
                     >
                       <MenuItem value={1}>Ongoing</MenuItem>
                       <MenuItem value={2}>Completed</MenuItem>
@@ -294,34 +351,6 @@ const GoalForm: React.FC<GoalFormProps> = ({
                       <FormHelperText>{errors.status.message}</FormHelperText>
                     )}
                   </FormControl>
-                )}
-              />
-            </Grid>
-            
-            {/* Color */}
-            <Grid item xs={12} sm={6}>
-              <Controller
-                name="color"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Color"
-                    type="color"
-                    fullWidth
-                    error={!!errors.color}
-                    helperText={errors.color?.message || 'Choose a color for your goal'}
-                    InputLabelProps={{ shrink: true }}
-                    disabled={isLoading}
-                    sx={{ 
-                      '& input[type="color"]': {
-                        width: '100%',
-                        height: '50px',
-                        padding: '0 5px',
-                        cursor: 'pointer'
-                      } 
-                    }}
-                  />
                 )}
               />
             </Grid>
@@ -341,6 +370,8 @@ const GoalForm: React.FC<GoalFormProps> = ({
                     error={!!errors.description}
                     helperText={errors.description?.message}
                     disabled={isLoading}
+                    placeholder="Enter a description for your goal"
+                    value={field.value || ''}
                   />
                 )}
               />
