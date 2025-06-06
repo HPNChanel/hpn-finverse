@@ -3,8 +3,7 @@ Standard response schemas for FinVerse API
 """
 
 from typing import Any, Dict, Generic, List, Optional, TypeVar
-from pydantic import BaseModel, Field
-from pydantic.generics import GenericModel
+from pydantic import BaseModel, Field, ConfigDict
 
 T = TypeVar('T')
 
@@ -17,7 +16,7 @@ class StandardResponse(BaseModel):
     errors: Optional[List[Dict[str, Any]]] = None
 
 
-class PaginatedResponse(GenericModel, Generic[T]):
+class PaginatedResponse(BaseModel, Generic[T]):
     """Paginated API response format"""
     count: int
     page: int = 1

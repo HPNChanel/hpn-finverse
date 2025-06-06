@@ -42,10 +42,11 @@ async def get_goals(
                 FinancialGoalResponse.from_orm(goal)
             )
         
+        # Return goals array directly in data field
         return StandardResponse(
             success=True,
             message="Goals retrieved successfully",
-            data={"goals": goal_responses}
+            data=goal_responses  # Return array directly, not wrapped in object
         )
     except Exception as e:
         return StandardResponse(
@@ -98,7 +99,7 @@ async def create_goal(
     Create a new financial goal for the current user
     """
     try:
-        print(f"Creating goal for user {current_user.id} with data: {goal.dict()}")
+        print(f"Creating goal for user {current_user.id} (email: {current_user.email}) with data: {goal.model_dump()}")
         
         goal_service = FinancialGoalService()
         db_goal = goal_service.create_goal(db, goal, current_user.id)

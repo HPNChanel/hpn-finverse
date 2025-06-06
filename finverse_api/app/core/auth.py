@@ -4,20 +4,19 @@ Authentication utilities for FastAPI
 
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
-import jwt  # PyJWT package is imported as 'jwt'
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import logging
 
-from app.core.security import decode_access_token
+from app.core.jwt_utils import verify_access_token, JWTError as JWTUtilsError
 from app.db.session import get_db
 from app.models.user import User
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# OAuth2 scheme for token extraction using the correct endpoint
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+# OAuth2 scheme for token extraction using the correct token endpoint
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 # Define public endpoints that don't require authentication
 PUBLIC_ENDPOINTS = [
@@ -32,25 +31,26 @@ PUBLIC_ENDPOINTS = [
 
 def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     """
-    Validate access token and extract user ID
+    Validate access token and extract user ID (updated to use jwt_utils)
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="Invalid token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
     try:
-        payload = decode_access_token(token)
+        payload = verify_access_token(token)
         user_id = payload.get("sub")
         if user_id is None:
             logger.warning("Token missing subject claim")
             raise credentials_exception
         return int(user_id)
-    except (jwt.PyJWTError, jwt.InvalidTokenError, jwt.ExpiredSignatureError, ValueError) as e:
-        # Log the specific error for debugging
+    except JWTUtilsError as e:
         logger.warning(f"Token validation error: {str(e)}")
-        # Updated to catch all common JWT exceptions including expired tokens
+        raise credentials_exception
+    except ValueError as e:
+        logger.warning(f"User ID conversion error: {str(e)}")
         raise credentials_exception
 
 async def get_current_user(

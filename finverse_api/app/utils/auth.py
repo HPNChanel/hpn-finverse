@@ -1,55 +1,67 @@
 """
-Authentication utilities for FinVerse API
+Authentication utilities
 """
 
-from fastapi import Depends, HTTPException, Header, status
-from typing import Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+import logging
 
+from app.core.jwt_utils import verify_access_token, JWTError as JWTUtilsError
 from app.db.session import get_db
-from app.services import user_service
+from app.models.user import User
 
-def get_user_id_from_token(token: str) -> int:
-    """Extract user_id from token (simplified)"""
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# OAuth2 scheme for token extraction
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+
+def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
+    """
+    Extract and validate user ID from JWT token
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
     try:
-        # In a real app, this would verify the token
-        # Here we just extract the user_id part
-        user_id = int(token.split("_")[0])
-        return user_id
-    except:
-        return None
+        payload = verify_access_token(token)
+        user_id = payload.get("sub")
+        if user_id is None:
+            logger.warning("Token missing subject claim")
+            raise credentials_exception
+        return int(user_id)
+    except JWTUtilsError as e:
+        logger.warning(f"Token validation error: {str(e)}")
+        raise credentials_exception
+    except ValueError as e:
+        logger.warning(f"User ID conversion error: {str(e)}")
+        raise credentials_exception
 
-async def get_current_user_id(
-    authorization: Optional[str] = Header(None)
-) -> int:
-    """Get current user ID from authorization header"""
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated"
-        )
-    
-    # Extract token from authorization header
-    token = authorization.replace("Bearer ", "")
-    user_id = get_user_id_from_token(token)
-    
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
-        )
-    
-    return user_id
-
-async def get_current_user(
+def get_current_user(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
-):
-    """Get current user from database"""
-    user = user_service.get_user_by_id(db=db, user_id=user_id)
-    if not user:
+) -> User:
+    """
+    Get current authenticated user from database
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        logger.warning(f"User with ID {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid user"
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    if not user.is_active:
+        logger.warning(f"Inactive user attempted access: {user_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled",
+        )
+    
     return user

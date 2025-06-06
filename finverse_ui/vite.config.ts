@@ -1,69 +1,34 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import nodeResolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
-import inject from '@rollup/plugin-inject';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
 
-// Create a require function based on the current module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      // Use browser-compatible versions instead of Node built-ins
-      stream: 'stream-browserify',
-      buffer: 'buffer',
-      util: 'util',
-      process: 'process',  // Changed from 'process/browser' to just 'process'
-      events: 'events',
-      assert: 'assert',
-      crypto: 'crypto-browserify',
-      path: resolve(__dirname, 'src/polyfills/path.js'),
-    }
-  },
-  define: {
-    // Define global variables for browser environment
-    'process.env': {},
-    'global': 'globalThis',
-  },
-  optimizeDeps: {
-    esbuildOptions: {
-      define: {
-        global: 'globalThis',
-      },
+      "@": path.resolve(__dirname, "./src"),
     },
-    include: [
-      'buffer',
-      'process',  // Changed from 'process/browser' to just 'process'
-      'util',
-      'events',
-      'stream-browserify',
-      'string_decoder'
-    ]
+  },
+  server: {
+    port: 5173,
+    strictPort: true,
+    host: true,
+    fs: {
+      // Allow serving files from the blockchain directory
+      allow: ['..', '../blockchain']
+    }
   },
   build: {
-    sourcemap: true,
-    rollupOptions: {
-      plugins: [
-        nodeResolve({
-          browser: true,
-          preferBuiltins: false,
-        }),
-        commonjs(),
-        inject({
-          // Inject Buffer globally to fix "buffer.Buffer is undefined" errors
-          Buffer: ['buffer', 'Buffer'],
-          // Inject process globally
-          process: ['process', 'default'],
-          // Manually inject util for browserify packages
-          util: ['util', '*']
-        }),
-      ]
-    }
+    outDir: 'dist',
+    sourcemap: true
   },
-});
+  // Serve static files from blockchain directory
+  publicDir: 'public',
+  define: {
+    // Provide environment variables for browser
+    'import.meta.env.VITE_TOKEN_ADDRESS': JSON.stringify(process.env.VITE_TOKEN_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3'),
+    'import.meta.env.VITE_STAKE_VAULT_ADDRESS': JSON.stringify(process.env.VITE_STAKE_VAULT_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512'),
+    'import.meta.env.VITE_FVT_TOKEN_ADDRESS': JSON.stringify(process.env.VITE_FVT_TOKEN_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3'),
+  }
+})

@@ -1,47 +1,29 @@
-import api from './api';
+// Update to use user.service.ts with email-based authentication
+export * from './user.service';
+export { userService as profileService } from './user.service';
 
-export interface ProfileResponse {
+// Standardized email-based user interface
+export interface UserProfile {
   id: number;
-  username: string;
-  name?: string;
+  email: string;
+  name: string;
+  avatar_url?: string;
+  is_active: boolean;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface ProfileUpdateRequest {
   name?: string;
+  avatar_url?: string;
 }
 
-export interface ChangePasswordRequest {
+// Keep backward compatible interfaces but update for email
+export interface ProfileUpdate {
+  name: string;
+}
+
+export interface PasswordChange {
   old_password: string;
   new_password: string;
 }
-
-const profileService = {
-  /**
-   * Get user profile
-   */
-  getProfile: async (): Promise<ProfileResponse> => {
-    const response = await api.get<ProfileResponse>('/profile');
-    return response.data;
-  },
-
-  /**
-   * Update user profile
-   */
-  updateProfile: async (data: ProfileUpdateRequest): Promise<ProfileResponse> => {
-    const response = await api.patch<ProfileResponse>('/profile/update', data);
-    return response.data;
-  },
-
-  /**
-   * Change user password
-   */
-  changePassword: async (old_password: string, new_password: string): Promise<void> => {
-    await api.patch('/profile/change-password', {
-      old_password,
-      new_password
-    });
-  }
-};
-
-export default profileService;

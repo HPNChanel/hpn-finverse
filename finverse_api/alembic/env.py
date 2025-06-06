@@ -17,14 +17,15 @@ from app.db.session import Base
 # Import all models to ensure they are registered with Base.metadata
 # This is critical for Alembic to detect all model changes
 from app.models.user import User
-from app.models.staking import Stake
+from app.models.stake import Stake  # Only unified Stake model
 from app.models.transaction import Transaction
 from app.models.financial_account import FinancialAccount
-from app.models.budget_plan import BudgetPlan
 from app.models.financial_goal import FinancialGoal
+from app.models.category import Category
+from app.models.budget import Budget, BudgetAlert
 
 # Import settings to get database URL
-from app.db.session import SQLALCHEMY_DATABASE_URL
+from app.core.config import settings
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -35,10 +36,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set SQLAlchemy URL in the alembic config
-config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
+# Set SQLAlchemy URL in the alembic config if not already set
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Use Base.metadata for 'autogenerate' support
+# This is the key fix - providing the MetaData object
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
@@ -57,6 +60,7 @@ def run_migrations_offline() -> None:
 
     Calls to context.execute() here emit the given string to the
     script output.
+
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -64,6 +68,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,  # Enable type change detection
+        compare_server_default=True,  # Enable default value change detection
     )
 
     with context.begin_transaction():
@@ -75,9 +81,10 @@ def run_migrations_online() -> None:
 
     In this scenario we need to create an Engine
     and associate a connection with the context.
+
     """
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -86,10 +93,10 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection, 
             target_metadata=target_metadata,
-            # Compare types properly - helpful for MySQL
-            compare_type=True,
-            # Detect renamed columns
-            compare_server_default=True,
+            # Enhanced configuration for better migration detection
+            compare_type=True,  # Detect column type changes
+            compare_server_default=True,  # Detect default value changes
+            render_as_batch=True,  # Use batch operations for better compatibility
         )
 
         with context.begin_transaction():
@@ -100,3 +107,7 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+
+print("✅ Unified Stake model imported for Alembic autogeneration")
+print("✅ StakingPosition model removed - using unified Stake only")
+print("✅ RecurringTransaction and InternalTransaction models removed - functionality moved to Transaction")

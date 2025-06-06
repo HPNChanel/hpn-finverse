@@ -1,6 +1,5 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Container, Typography, Button, Paper, Box } from '@mui/material';
-import { ErrorOutline } from '@mui/icons-material';
+import React, { Component, ReactNode } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -9,76 +8,64 @@ interface Props {
 
 interface State {
   hasError: boolean;
-  error: Error | null;
+  error?: Error;
 }
 
-class ErrorBoundary extends Component<Props, State> {
+export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
+    this.state = { hasError: false };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return {
-      hasError: true,
-      error
-    };
+    return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('Error caught by ErrorBoundary:', error, errorInfo);
-    // You could log the error to an error reporting service here
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error('Dashboard Error Boundary caught an error:', error, errorInfo);
   }
 
-  handleReset = (): void => {
-    this.setState({
-      hasError: false,
-      error: null
-    });
+  handleRetry = () => {
+    this.setState({ hasError: false });
+    window.location.reload();
   };
 
-  render(): ReactNode {
+  render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
       return (
-        <Container maxWidth="md" sx={{ mt: 8 }}>
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <ErrorOutline color="error" sx={{ fontSize: 64, mb: 2 }} />
-            <Typography variant="h5" gutterBottom>
-              Something went wrong
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              {this.state.error?.message || 'An unexpected error occurred'}
-            </Typography>
-            <Box mt={4}>
-              <Button 
-                variant="contained" 
-                color="primary" 
-                onClick={this.handleReset}
-                sx={{ mr: 2 }}
-              >
-                Try Again
-              </Button>
-              <Button 
-                variant="outlined" 
-                onClick={() => window.location.href = '/'}
-              >
-                Go to Homepage
-              </Button>
-            </Box>
-          </Paper>
-        </Container>
+        <div className="min-h-[400px] flex items-center justify-center">
+          <div className="text-center space-y-4 p-8">
+            <AlertTriangle className="w-12 h-12 text-destructive mx-auto" />
+            <div>
+              <h2 className="text-xl font-semibold text-foreground mb-2">Something went wrong</h2>
+              <p className="text-muted-foreground mb-4">
+                The dashboard encountered an unexpected error. Please try refreshing the page.
+              </p>
+              {this.state.error && (
+                <details className="text-sm text-muted-foreground mb-4">
+                  <summary className="cursor-pointer hover:text-foreground">Error Details</summary>
+                  <pre className="mt-2 p-2 bg-muted rounded text-left overflow-auto">
+                    {this.state.error.message}
+                  </pre>
+                </details>
+              )}
+            </div>
+            <button
+              onClick={this.handleRetry}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors mx-auto"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh Page
+            </button>
+          </div>
+        </div>
       );
     }
 
     return this.props.children;
   }
 }
-
-export default ErrorBoundary;

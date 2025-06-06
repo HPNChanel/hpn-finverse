@@ -1,23 +1,40 @@
-import api from './api';
-import type { Account, AccountListResponse, AccountSummary } from '../types';
-import { handleErrorResponse } from '../utils/importFixes';
-import axios from 'axios';
+import api from '@/lib/api';
 
-// Types for API requests
-interface CreateAccountRequest {
+export interface Account {
+  id: number;
+  user_id: number;
   name: string;
   type: string;
-  initial_balance?: number;
+  balance: number;
+  created_at: string;
+  icon?: string;
+  color?: string;
+  created_by_default: boolean;
+  note?: string;
+  currency: string;
+  is_hidden: boolean;
+  is_active: boolean;
+}
+
+export interface CreateAccountRequest {
+  name: string;
+  type: string;
+  initial_balance: number;
   note?: string;
   icon?: string;
   color?: string;
   currency?: string;
 }
 
-interface TopUpAccountRequest {
-  account_id: number;
-  amount: number;
+export interface UpdateAccountRequest {
+  name?: string;
+  type?: string;
+  balance?: number;
   note?: string;
+  icon?: string;
+  color?: string;
+  currency?: string;
+  is_hidden?: boolean;
 }
 
 export interface AccountType {
@@ -28,192 +45,89 @@ export interface AccountType {
   description?: string;
 }
 
-const accountService = {
-  /**
-   * Get all accounts for the current user
-   * @returns List of accounts
-   */
-  getAccounts: async (): Promise<Account[]> => {
-    try {
-      const response = await api.get<AccountListResponse>('/accounts/list');
-      return response.data.accounts || [];
-    } catch (error) {
-      console.error('Error fetching accounts:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timed out. Please try again.');
-        }
-        if (error.response?.status === 401) {
-          throw new Error('Authentication required. Please log in again.');
-        }
-        if (!error.response) {
-          throw new Error('Network error. Please check your internet connection.');
-        }
-      }
-      
-      throw new Error(handleErrorResponse(error));
-    }
-  },
+export interface AccountSummary {
+  total: number;
+  wallet: number;
+  saving: number;
+  investment: number;
+  goal: number;
+  account_count: number;
+  hidden_account_count: number;
+  active_budgets: number;
+  total_budget_limit: number;
+  total_budget_spent: number;
+}
 
-  /**
-   * Get available account types
-   * @returns List of account types
-   */
-  getAccountTypes: async (): Promise<AccountType[]> => {
-    try {
-      const response = await api.get<AccountType[]>('/accounts/types');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching account types:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timed out. Please try again.');
-        }
-        if (!error.response) {
-          throw new Error('Network error. Please check your internet connection.');
-        }
-      }
-      
-      throw new Error(handleErrorResponse(error));
-    }
-  },
+class AccountService {
+  private baseUrl = '/accounts';
 
-  /**
-   * Create a new account
-   * @param name Account name
-   * @param type Account type
-   * @param initialBalance Initial balance amount
-   * @param note Optional account note
-   * @param icon Optional icon name
-   * @param color Optional color code
-   * @param currency Optional currency code (defaults to USD)
-   * @returns Created account
-   */
-  createAccount: async (
-    name: string,
-    type: string,
-    initialBalance: number = 0,
-    note?: string,
-    icon?: string,
-    color?: string,
-    currency: string = 'USD'
-  ): Promise<Account> => {
-    try {
-      // Format request payload according to backend expectations
-      const payload = {
-        name: name.trim(),
-        type: type,
-        initial_balance: initialBalance,
-        note: note?.trim(),
-        icon: icon,
-        color: color,
-        currency: currency
-      };
-      
-      console.log('Creating account with payload:', JSON.stringify(payload, null, 2));
-      
-      const response = await api.post<Account>('/accounts/create', payload);
-      return response.data;
-    } catch (error) {
-      console.error('Error creating account:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timed out. Please try again.');
-        }
-        if (error.response?.status === 401) {
-          throw new Error('Authentication required. Please log in again.');
-        }
-        if (error.response?.status === 422) {
-          // Handle validation errors from FastAPI
-          console.error('Validation error details:', JSON.stringify(error.response?.data));
-          const validationError = error.response?.data?.detail;
-          
-          if (Array.isArray(validationError)) {
-            // Extract the first validation error message
-            const firstError = validationError[0];
-            const errorMsg = firstError.msg || 'Invalid data format';
-            const field = firstError.loc?.slice(-1)[0] || 'field';
-            throw new Error(`Validation error: ${errorMsg} (${field})`);
-          }
-          
-          throw new Error(
-            error.response?.data?.detail || 
-            'The server could not process your request. Please check your input data.'
-          );
-        }
-        if (error.response?.status === 400) {
-          const errorDetail = error.response.data?.detail || 'Invalid account data';
-          throw new Error(errorDetail);
-        }
-        if (!error.response) {
-          throw new Error('Network error. Please check your internet connection.');
-        }
-      }
-      
-      throw new Error(handleErrorResponse(error));
-    }
-  },
-
-  /**
-   * Top up an account with additional funds
-   * @param data Top-up request data
-   * @returns Updated account
-   */
-  topUpAccount: async (data: TopUpAccountRequest): Promise<Account> => {
-    try {
-      const response = await api.post<Account>('/accounts/top-up', data);
-      return response.data;
-    } catch (error) {
-      console.error('Error topping up account:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timed out. Please try again.');
-        }
-        if (error.response?.status === 401) {
-          throw new Error('Authentication required. Please log in again.');
-        }
-        if (error.response?.status === 404) {
-          throw new Error('Account not found');
-        }
-        if (!error.response) {
-          throw new Error('Network error. Please check your internet connection.');
-        }
-      }
-      
-      throw new Error(handleErrorResponse(error));
-    }
-  },
-
-  /**
-   * Get account summary statistics
-   * @returns Account summary
-   */
-  getAccountSummary: async (): Promise<AccountSummary> => {
-    try {
-      const response = await api.get<AccountSummary>('/accounts/summary');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching account summary:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timed out. Please try again.');
-        }
-        if (error.response?.status === 401) {
-          throw new Error('Authentication required. Please log in again.');
-        }
-        if (!error.response) {
-          throw new Error('Network error. Please check your internet connection.');
-        }
-      }
-      
-      throw new Error(handleErrorResponse(error));
-    }
+  async getAccountTypes(): Promise<AccountType[]> {
+    const response = await api.get(`${this.baseUrl}/types`);
+    return response.data;
   }
-};
 
+  async createAccount(accountData: CreateAccountRequest): Promise<Account> {
+    // Ensure initial_balance is properly parsed as a number
+    const payload = {
+      ...accountData,
+      initial_balance: parseFloat(accountData.initial_balance.toString()) || 0,
+      currency: accountData.currency || 'USD'
+    };
+    
+    console.log('Account Service - Sending payload:', payload);
+    
+    const response = await api.post(`${this.baseUrl}/create`, payload);
+    return response.data;
+  }
+
+  async getAccounts(): Promise<Account[]> {
+    const response = await api.get(`${this.baseUrl}/list`);
+    return response.data.accounts;
+  }
+
+  async getAccountSummary(): Promise<AccountSummary> {
+    const response = await api.get(`${this.baseUrl}/summary`);
+    return response.data;
+  }
+
+  async updateAccount(accountId: number, updates: UpdateAccountRequest): Promise<Account> {
+    const response = await api.put(`${this.baseUrl}/${accountId}`, updates);
+    return response.data;
+  }
+
+  async deleteAccount(accountId: number, force: boolean = false): Promise<void> {
+    const params = force ? '?force=true' : '';
+    await api.delete(`${this.baseUrl}/${accountId}${params}`);
+  }
+
+  async topUpAccount(accountId: number, amount: number, note?: string): Promise<Account> {
+    const response = await api.post(`${this.baseUrl}/top-up`, {
+      account_id: accountId,
+      amount: parseFloat(amount.toString()),
+      note
+    });
+    return response.data;
+  }
+
+  async toggleAccountVisibility(accountId: number, isHidden: boolean): Promise<Account> {
+    const response = await api.patch(`${this.baseUrl}/${accountId}/visibility`, {
+      is_hidden: isHidden
+    });
+    return response.data;
+  }
+
+  async getAccountBalance(accountId: number): Promise<number> {
+    const response = await api.get(`${this.baseUrl}/${accountId}/balance`);
+    return response.data.balance;
+  }
+
+  async updateAccountBalance(accountId: number, balance: number): Promise<Account> {
+    const response = await api.patch(`${this.baseUrl}/${accountId}/balance`, {
+      balance: parseFloat(balance.toString())
+    });
+    return response.data;
+  }
+}
+
+export const accountService = new AccountService();
 export default accountService;

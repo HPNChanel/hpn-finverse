@@ -2,8 +2,9 @@
 Financial Goal model for FinVerse API
 """
 
+from __future__ import annotations
 from datetime import datetime, date
-from sqlalchemy import Column, BigInteger, String, Float, DateTime, ForeignKey, Integer, Date, Text
+from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, Integer, Date, Text, DECIMAL
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -16,9 +17,10 @@ class FinancialGoal(Base):
     
     id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    account_id = Column(BigInteger, ForeignKey("financial_accounts.id"), nullable=True, index=True, comment="Optional account used to fund this goal")
     name = Column(String(255), nullable=False)
-    target_amount = Column(Float, nullable=False)
-    current_amount = Column(Float, default=0.0, nullable=False)
+    target_amount = Column(DECIMAL(18, 8), nullable=False, comment="Target amount with financial precision")
+    current_amount = Column(DECIMAL(18, 8), default=0.00000000, nullable=False, comment="Current saved amount")
     start_date = Column(Date, nullable=False)
     target_date = Column(Date, nullable=False)
     description = Column(Text, nullable=True)
@@ -31,22 +33,24 @@ class FinancialGoal(Base):
     
     # Relationships
     user = relationship("User", back_populates="financial_goals")
+    account = relationship("FinancialAccount", back_populates="financial_goals")
     
     @property
     def progress_percentage(self) -> float:
         """Calculate progress percentage"""
         if self.target_amount <= 0:
             return 0.0
-        return min(100.0, (self.current_amount / self.target_amount) * 100)
+        return min(100.0, (float(self.current_amount) / float(self.target_amount)) * 100)
     
     def to_dict(self):
         """Convert goal to dictionary for serialization"""
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "account_id": self.account_id,
             "name": self.name,
-            "target_amount": self.target_amount,
-            "current_amount": self.current_amount,
+            "target_amount": float(self.target_amount) if self.target_amount else 0.0,
+            "current_amount": float(self.current_amount) if self.current_amount else 0.0,
             "start_date": self.start_date.isoformat() if self.start_date else None,
             "target_date": self.target_date.isoformat() if self.target_date else None,
             "description": self.description,

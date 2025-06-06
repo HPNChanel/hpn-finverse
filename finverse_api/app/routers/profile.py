@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.profile import ProfileOut, ProfileUpdate
 from app.schemas.user import ChangePasswordRequest
-from app.services import user_service
+from app.services.user_service import user_service_instance  # Use singleton instance
 from app.db.session import get_db
 from app.core.auth import get_current_user, get_current_user_id
 
@@ -42,7 +42,7 @@ async def update_profile(
 ):
     """Update user profile"""
     # Update user
-    user = user_service.update_user(
+    user = user_service_instance.update_user(
         db=db, 
         user_id=user_id, 
         name=profile_data.name
@@ -65,7 +65,7 @@ async def change_password(
 ):
     """Change user password"""
     # Change password
-    result = user_service.change_password(
+    result = user_service_instance.change_password(
         db=db,
         user_id=user_id,
         old_password=password_data.old_password,
