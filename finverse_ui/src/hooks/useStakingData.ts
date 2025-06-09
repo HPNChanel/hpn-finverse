@@ -1,31 +1,73 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { ethers } from 'ethers';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { BrowserProvider, JsonRpcSigner, Contract, formatEther } from 'ethers';
 import { useWallet } from './useWallet';
-import { useToast } from './use-toast';
-import { 
-  loadContractInfo, 
-  ERC20_ABI, 
-  STAKE_VAULT_ABI, 
-  FALLBACK_CONTRACTS, 
-  loadUserStakesFromContract, 
-  ContractStakingSummary 
-} from '@/lib/contracts';
-import { ErrorHandler } from '@/utils/errorHandler';
-import { stakingService } from '@/services/stakingService';
-import type { ContractStakePosition } from '@/types/contracts';
+import { getTokenAddress, getStakeVaultAddress } from '@/utils/contractLoader';
+import { stakingApi } from '@/lib/api';
+import { extractErrorMessage } from '@/utils/errorHelpers';
 
-// Add missing interface definitions
-interface StakingPool {
-  id: number;
-  name: string;
-  description: string;
+// Add proper type definitions
+interface EthereumProvider {
+  isMetaMask?: boolean;
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
+}
+
+declare global {
+  interface Window {
+    ethereum?: EthereumProvider;
+  }
+}
+
+// Add missing type definitions
+interface ContractStakePosition {
+  stakeIndex: number;
+  amount: string;
+  amountFormatted: string;
+  timestamp: number;
+  startDate: Date;
+  claimed: boolean;
+  reward: string;
+  rewardFormatted: string;
+  canUnstake: boolean;
   apy: number;
-  min_stake: number;
-  max_stake: number;
-  lock_period: number;
-  is_active: boolean;
-  total_staked: number;
-  participants: number;
+  lockPeriod: number;
+  lockPeriodDays: number;
+  daysRemaining: number;
+  isUnlocked: boolean;
+  txHash?: string;
+  blockNumber?: number;
+  syncedToBackend?: boolean;
+  tokenAddress?: string;
+  tokenSymbol?: string;
+  isNativeToken?: boolean;
+}
+
+interface ContractStakingSummary {
+  userAddress: string;
+  totalStaked: string;
+  totalStakedFormatted: string;
+  stakeCount: number;
+  positions: ContractStakePosition[];
+  totalRewards: string;
+  totalRewardsFormatted: string;
+  totalClaimable: string;
+  totalClaimableFormatted: string;
+  lastUpdated: number;
+}
+
+interface StakePool {
+  id: string;
+  name: string;
+  apy: number;
+  lockPeriodDays: number;
+  minStake: number;
+  maxStake?: number;
+  description: string;
+  isActive: boolean;
+  tokenAddress?: string;
+  tokenSymbol?: string;
+  rewardTokenSymbol?: string;
 }
 
 interface RewardHistory {
@@ -36,10 +78,10 @@ interface RewardHistory {
 }
 
 interface TokenBalances {
-  fvtBalance: string;
-  stakedBalance: string;
-  ethBalance: string;
-  allowance: string;
+  fvtBalance: string | undefined;
+  stakedBalance: string | undefined;
+  ethBalance: string | undefined;
+  allowance: string | undefined;
 }
 
 interface GlobalStats {
@@ -52,9 +94,9 @@ interface GlobalStats {
 
 interface UseStakingDataReturn {
   // Data
-  pools: StakingPool[];
-  stakes: ContractStakePosition[]; // Updated to use contract positions
-  contractSummary: ContractStakingSummary | null; // New: direct contract data
+  pools: StakePool[];
+  stakes: ContractStakePosition[];
+  contractSummary: ContractStakingSummary | null;
   rewards: RewardHistory[];
   claimableRewards: number;
   tokenBalances: TokenBalances | null;
@@ -69,7 +111,6 @@ interface UseStakingDataReturn {
   
   // Actions
   refreshData: () => Promise<void>;
-  refreshContractData: () => Promise<void>; // New: refresh only contract data
   clearError: () => void;
   
   // Blockchain functions
@@ -79,367 +120,556 @@ interface UseStakingDataReturn {
   stakeTokensWithPool: (amount: string, poolId: number) => Promise<void>;
 }
 
+// Contract ABIs
+const ERC20_ABI = [
+  'function balanceOf(address owner) view returns (uint256)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)'
+];
+
+const STAKE_VAULT_ABI = [
+  'function getTotalStaked(address user) view returns (uint256)',
+  'function getUserStakeCount(address user) view returns (uint256)',
+  'function getUserStake(address user, uint256 stakeIndex) view returns (tuple(uint256 amount, uint256 timestamp, bool claimed, address tokenAddress, uint256 poolId))',
+  'function getPendingReward(address user, uint256 stakeIndex) view returns (uint256)',
+  'function canUnstake(address user, uint256 stakeIndex) view returns (bool)',
+  'function totalStakedAmount() view returns (uint256)',
+  'function APY_PERCENTAGE() view returns (uint256)',
+  'function LOCK_PERIOD() view returns (uint256)'
+];
+
+// Add call tracking for debugging infinite loops
+let loadPoolsCallCount = 0;
+let setPoolsCallCount = 0;
+let effectRunCount = 0;
+
 export const useStakingData = (): UseStakingDataReturn => {
+  // Get wallet state
+  const { 
+    isConnected, 
+    accountAddress, 
+    isCorrectNetwork 
+  } = useWallet();
+
+  // State management
+  const [pools, setPools] = useState<StakePool[]>([]);
   const [stakes, setStakes] = useState<ContractStakePosition[]>([]);
-  const [contractSummary, setContractSummary] = useState<ContractStakingSummary | null>(null);
-  const [pools, setPools] = useState<StakingPool[]>([]);
-  const [rewards, setRewards] = useState<RewardHistory[]>([]);
-  const [claimableRewards, setClaimableRewards] = useState<number>(0);
-  const [tokenBalances, setTokenBalances] = useState<TokenBalances | null>(null);
-  const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+  const [contractSummary] = useState<ContractStakingSummary | null>(null);
+  const [rewards] = useState<RewardHistory[]>([]);
+  const [claimableRewards] = useState<number>(0);
+  const [tokenBalances] = useState<TokenBalances | null>(null);
+  const [globalStats] = useState<GlobalStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Memoization refs to prevent infinite loading
-  const contractsLoadedRef = useRef(false);
-  const contractInfoRef = useRef<any>(null);
-  const lastAccountRef = useRef<string | null>(null);
-  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Web3 state
+  const [provider] = useState<BrowserProvider | null>(null);
+  const [signer] = useState<JsonRpcSigner | null>(null);
+  const [userAddress, setUserAddress] = useState<string | null>(null);
+  const [web3Ready, setWeb3Ready] = useState(false);
+  
+  // Add request state tracking
+  const [isRequesting] = useState(false);
+  
+  // One-time initialization and fetching flags
+  const initializationLoggedRef = useRef(false);
+  const providerWarningLoggedRef = useRef(false);
+  
+  // Add additional guards to prevent concurrent operations
+  const isRequestingAccountsRef = useRef(false);
+  const isInitializingRef = useRef(false);
+  const alreadyInitializedRef = useRef(false);
 
-  const { accountAddress, isConnected, isCorrectNetwork } = useWallet();
-  const { toast } = useToast();
+  // Add refs to track previous values for comparison
+  const prevPoolsRef = useRef<StakePool[]>([]);
+  const prevStakesRef = useRef<ContractStakePosition[]>([]);
+  const isInitializedRef = useRef(false);
+  const loadingPromiseRef = useRef<Promise<void> | null>(null);
 
-  // Load contract information only once
-  const loadContractsOnce = useCallback(async () => {
-    if (contractsLoadedRef.current && contractInfoRef.current) {
-      return contractInfoRef.current;
-    }
-
-    try {
-      console.log('🔄 Loading contract information...');
-      const info = await loadContractInfo();
-      
-      if (info) {
-        contractInfoRef.current = info.contracts;
-        console.log('✅ Contract info loaded successfully');
-      } else {
-        contractInfoRef.current = FALLBACK_CONTRACTS;
-        console.warn('⚠️ Using fallback contract addresses');
-      }
-      
-      contractsLoadedRef.current = true;
-      return contractInfoRef.current;
-    } catch (error) {
-      console.error('❌ Failed to load contract info:', error);
-      ErrorHandler.logError(error, 'Load contract info');
-      contractInfoRef.current = FALLBACK_CONTRACTS;
-      contractsLoadedRef.current = true;
-      setError('Failed to load contract information. Using fallback addresses.');
-      return contractInfoRef.current;
-    }
-  }, []);
-
-  // Clear error
+  // Clear error function
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
-  // Fetch token balances
-  const fetchTokenBalances = useCallback(async () => {
-    if (!accountAddress || !isConnected || !isCorrectNetwork || !contractInfoRef.current) {
-      setTokenBalances(null);
-      return;
+  // Web3 initialization with proper request state management
+  const initializeWeb3 = useCallback(async (): Promise<boolean> => {
+    // Prevent multiple simultaneous initializations
+    if (isInitializingRef.current) {
+      console.log('⏳ Web3 initialization already in progress, waiting...');
+      return false;
+    }
+
+    // Skip if already successfully initialized
+    if (alreadyInitializedRef.current && web3Ready && userAddress) {
+      console.log('✅ Web3 already initialized, skipping...');
+      return true;
+    }
+
+    // Prevent multiple simultaneous requests
+    if (isRequestingAccountsRef.current) {
+      console.log('⏳ Account request already in progress, waiting...');
+      return false;
     }
 
     try {
-      await stakingService.initialize();
+      isInitializingRef.current = true;
       
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const tokenContract = new ethers.Contract(contractInfoRef.current.MockERC20.address, ERC20_ABI, provider);
-      const vaultContract = new ethers.Contract(contractInfoRef.current.StakeVault.address, STAKE_VAULT_ABI, provider);
+      // Check if window.ethereum is available
+      if (typeof window === 'undefined' || !window.ethereum) {
+        if (!providerWarningLoggedRef.current) {
+          console.warn('⚠️ MetaMask not detected. Web3 functionality will be limited.');
+          providerWarningLoggedRef.current = true;
+        }
+        return false;
+      }
 
-      const [fvtBalance, stakedBalance, ethBalance, allowance] = await Promise.allSettled([
-        tokenContract.balanceOf(accountAddress),
-        vaultContract.totalStaked(accountAddress),
-        provider.getBalance(accountAddress),
-        tokenContract.allowance(accountAddress, contractInfoRef.current.StakeVault.address)
-      ]);
+      const ethereum = window.ethereum;
+      
+      // Request accounts with proper error handling
+      const accounts = await ethereum.request({ method: 'eth_accounts' }) as string[];
+      
+      if (accounts && accounts.length > 0) {
+        setUserAddress(accounts[0]);
+        setWeb3Ready(true);
+        alreadyInitializedRef.current = true;
+        return true;
+      }
 
-      setTokenBalances({
-        fvtBalance: fvtBalance.status === 'fulfilled' ? ethers.formatEther(fvtBalance.value) : '0',
-        stakedBalance: stakedBalance.status === 'fulfilled' ? ethers.formatEther(stakedBalance.value) : '0',
-        ethBalance: ethBalance.status === 'fulfilled' ? ethers.formatEther(ethBalance.value) : '0',
-        allowance: allowance.status === 'fulfilled' ? ethers.formatEther(allowance.value) : '0'
-      });
-    } catch (err) {
-      console.error('Failed to fetch token balances:', err);
-      setError('Failed to fetch token balances');
+      return false;
+    } catch (error: unknown) {
+      console.error('Web3 initialization failed:', error);
+      setError(error instanceof Error ? error.message : 'Web3 initialization failed');
+      return false;
+    } finally {
+      isInitializingRef.current = false;
     }
-  }, [accountAddress, isConnected, isCorrectNetwork]);
+  }, [web3Ready, userAddress]);
 
-  // Fetch global stats
-  const fetchGlobalStats = useCallback(async () => {
-    if (!contractInfoRef.current) return;
-
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const vaultContract = new ethers.Contract(contractInfoRef.current.StakeVault.address, STAKE_VAULT_ABI, provider);
-
-      const [apy, lockPeriod] = await Promise.allSettled([
-        vaultContract.APY_PERCENTAGE(),
-        vaultContract.LOCK_PERIOD()
-      ]);
-
-      setGlobalStats({
-        totalStaked: '150000',
-        apy: apy.status === 'fulfilled' ? Number(apy.value) : 10,
-        lockPeriodSeconds: lockPeriod.status === 'fulfilled' ? Number(lockPeriod.value) : 2592000,
-        lockPeriodDays: lockPeriod.status === 'fulfilled' ? Number(lockPeriod.value) / (24 * 60 * 60) : 30,
-        totalStakers: 42
+  // Enhanced Web3 readiness check
+  const isWeb3Ready = useMemo(() => {
+    const ready = !!(
+      accountAddress && 
+      accountAddress !== '0x' && 
+      isConnected && 
+      isCorrectNetwork &&
+      !isRequesting
+    );
+    
+    if (!ready) {
+      console.log('🔍 Web3 not ready:', {
+        accountAddress: !!accountAddress,
+        isConnected,
+        isCorrectNetwork,
+        isRequesting
       });
-    } catch (err) {
-      console.error('Failed to fetch global stats:', err);
     }
+    
+    return ready;
+  }, [accountAddress, isConnected, isCorrectNetwork, isRequesting]);
+
+  // Safe state comparison function
+  const isPoolsEqual = useCallback((newPools: StakePool[], currentPools: StakePool[]): boolean => {
+    if (newPools.length !== currentPools.length) {
+      return false;
+    }
+    
+    return newPools.every((newPool, index) => {
+      const currentPool = currentPools[index];
+      return (
+        newPool.id === currentPool.id &&
+        newPool.name === currentPool.name &&
+        newPool.apy === currentPool.apy &&
+        newPool.isActive === currentPool.isActive
+      );
+    });
   }, []);
 
-  // Load staking positions directly from smart contract
-  const loadContractStakingData = useCallback(async () => {
-    if (!accountAddress || !isConnected || !isCorrectNetwork) {
-      setContractSummary(null);
-      setStakes([]);
-      return;
+  // Fallback pools function
+  const getFallbackPools = useCallback((): StakePool[] => {
+    console.log('📋 Using fallback pools');
+    return [
+      {
+        id: '0',
+        name: 'ETH Flexible Pool',
+        apy: 8,
+        lockPeriodDays: 0,
+        minStake: 0.01,
+        maxStake: 100.0,
+        description: 'Stake ETH with no lock period',
+        isActive: true,
+        tokenSymbol: 'ETH',
+        rewardTokenSymbol: 'FVT'
+      },
+      {
+        id: '1',
+        name: 'FVT Standard Pool',
+        apy: 10,
+        lockPeriodDays: 30,
+        minStake: 1.0,
+        maxStake: 10000.0,
+        description: 'Stake FVT tokens with 30-day lock period',
+        isActive: true,
+        tokenSymbol: 'FVT',
+        rewardTokenSymbol: 'FVT'
+      }
+    ];
+  }, []);
+
+  // Enhanced transformContractPoolsToUIFormat with logging and validation
+  const transformContractPoolsToUIFormat = useCallback((contractPools: unknown[]): StakePool[] => {
+    console.log('🔄 transformContractPoolsToUIFormat called with:', {
+      inputType: Array.isArray(contractPools) ? 'array' : typeof contractPools,
+      inputLength: Array.isArray(contractPools) ? contractPools.length : 'N/A',
+      inputData: contractPools
+    });
+
+    if (!Array.isArray(contractPools)) {
+      console.warn('⚠️ Contract pools is not an array:', contractPools);
+      return getFallbackPools();
     }
 
-    try {
-      console.log('🔗 Loading staking data directly from smart contract...');
-      
-      const summary = await loadUserStakesFromContract(accountAddress);
-      
-      setContractSummary(summary);
-      setStakes(summary.positions);
-      
-      // Update claimable rewards from contract data
-      const claimableAmount = parseFloat(summary.totalClaimable);
-      setClaimableRewards(claimableAmount);
-      
-      console.log(`✅ Loaded ${summary.positions.length} stake positions from contract`);
-      console.log(`📊 Total staked: ${summary.totalStakedFormatted} FVT`);
-      console.log(`💰 Total claimable: ${summary.totalClaimableFormatted} FVT`);
-      
-    } catch (error) {
-      console.error('❌ Failed to load contract staking data:', error);
-      
-      // Fallback to empty data instead of throwing
-      setContractSummary({
-        userAddress: accountAddress,
-        totalStaked: '0',
-        totalStakedFormatted: '0.0000',
-        stakeCount: 0,
-        positions: [],
-        totalRewards: '0',
-        totalRewardsFormatted: '0.000000',
-        totalClaimable: '0',
-        totalClaimableFormatted: '0.000000',
-        lastUpdated: Date.now()
-      });
-      setStakes([]);
-      setClaimableRewards(0);
-    }
-  }, [accountAddress, isConnected, isCorrectNetwork]);
-
-  // Load API-based data (pools, etc.) with fallback
-  const loadApiStakingData = useCallback(async () => {
-    if (!isConnected || !isCorrectNetwork) {
-      return;
-    }
-
-    try {
-      console.log('📡 Loading supplementary data from API...');
-      
-      // Load pools and rewards from API (these don't depend on user stakes)
-      const poolsResponse = await stakingService.getStakingPools();
-      setPools(poolsResponse.pools || []);
-      
-      // Load rewards history if available
+    const transformed = contractPools.map((pool: any, index) => {
       try {
-        const rewardsResponse = await stakingService.getStakingRewards();
-        setRewards(rewardsResponse.rewards || []);
-      } catch (rewardsError) {
-        console.warn('Could not load rewards from API, using empty array');
-        setRewards([]);
-      }
-
-    } catch (error) {
-      console.warn('Failed to load API data, using fallbacks:', error);
-      
-      // Use fallback pool data
-      setPools([
-        {
-          id: 1,
-          name: "Stable Pool",
-          description: "Low risk, stable returns",
-          apy: 10.0,
-          min_stake: 0.01,
-          max_stake: 10000.0,
-          lock_period: 30,
-          is_active: true,
-          total_staked: 50000.0,
-          participants: 25
+        // Safe pool ID validation and assignment
+        let poolId = pool.id;
+        
+        // Parse and validate pool ID
+        const poolIdNumber = poolId !== undefined ? Number(poolId) : NaN;
+        const isValidPoolId = Number.isFinite(poolIdNumber) && poolIdNumber >= 0;
+        
+        if (!isValidPoolId) {
+          console.warn(`⚠️ Pool ${index} has invalid ID, using index:`, {
+            originalId: pool.id,
+            parsedId: poolIdNumber,
+            fallbackId: index,
+            poolData: pool
+          });
+          poolId = index;
+        } else {
+          poolId = poolIdNumber;
         }
-      ]);
-      setRewards([]);
-    }
-  }, [isConnected, isCorrectNetwork]);
 
-  // Refresh only contract data
-  const refreshContractData = useCallback(async (): Promise<void> => {
-    await loadContractStakingData();
-  }, [loadContractStakingData]);
+        // Normalize numeric fields from strings to numbers
+        const minStakeNum = pool.minStake ? Number(pool.minStake) : 0;
+        const maxStakeNum = pool.maxStake ? Number(pool.maxStake) : undefined;
 
-  // Enhanced data loading that prioritizes contract data
-  const loadStakingData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
+        const transformedPool: StakePool = {
+          id: String(poolId), // Ensure ID is always a string
+          name: pool.name || `Pool ${poolId}`,
+          apy: typeof pool.apy === 'number' && Number.isFinite(pool.apy) ? pool.apy : 0,
+          lockPeriodDays: typeof pool.lockPeriodDays === 'number' && Number.isFinite(pool.lockPeriodDays) ? pool.lockPeriodDays : 0,
+          minStake: Number.isFinite(minStakeNum) && minStakeNum >= 0 ? minStakeNum : 0,
+          maxStake: maxStakeNum && Number.isFinite(maxStakeNum) && maxStakeNum > 0 ? maxStakeNum : undefined,
+          description: pool.description || `Staking pool with ${pool.apy || 0}% APY`,
+          isActive: pool.isActive !== false,
+          tokenAddress: pool.tokenAddress,
+          tokenSymbol: pool.tokenSymbol || 'FVT',
+          rewardTokenSymbol: pool.rewardTokenSymbol || 'FVT'
+        };
 
-      // Load contract data first (most important)
-      await loadContractStakingData();
-      
-      // Load supplementary API data
-      await loadApiStakingData();
+        // Final validation of the transformed pool
+        const finalIdNumber = Number(transformedPool.id);
+        if (!Number.isFinite(finalIdNumber) || finalIdNumber < 0) {
+          console.error(`❌ Transformed pool still has invalid ID:`, {
+            original: pool,
+            transformed: transformedPool,
+            index
+          });
+          transformedPool.id = `emergency-fallback-${index}-${Date.now()}`;
+        }
 
-    } catch (err: any) {
-      console.error('Error in loadStakingData:', err);
-      setError('Failed to load staking data from blockchain');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [loadContractStakingData, loadApiStakingData]);
-
-  // Refresh all data
-  const refreshData = useCallback(async (): Promise<void> => {
-    setIsRefreshing(true);
-    setError(null);
-    
-    try {
-      await Promise.all([
-        loadStakingData(),
-        fetchTokenBalances(),
-        fetchGlobalStats()
-      ]);
-    } catch (err) {
-      console.error('Failed to refresh data:', err);
-      setError('Failed to refresh data');
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [loadStakingData, fetchTokenBalances, fetchGlobalStats]);
-
-  // Initialize contracts on mount
-  useEffect(() => {
-    loadContractsOnce();
-  }, [loadContractsOnce]);
-
-  // Load data when wallet state changes (with account change detection)
-  useEffect(() => {
-    const hasAccountChanged = lastAccountRef.current !== accountAddress;
-    lastAccountRef.current = accountAddress;
-
-    if (isConnected && isCorrectNetwork && accountAddress && contractsLoadedRef.current) {
-      if (hasAccountChanged) {
-        console.log('Account changed, reloading data...');
-        setIsLoading(true);
-        refreshData().finally(() => setIsLoading(false));
-      } else {
-        // Just refresh without showing loading state
-        refreshData();
+        return transformedPool;
+      } catch (error) {
+        console.error(`❌ Error transforming pool at index ${index}:`, error, pool);
+        // Return a safe fallback pool
+        return {
+          id: `error-fallback-${index}-${Date.now()}`,
+          name: `Pool ${index + 1} (Error)`,
+          apy: 0,
+          lockPeriodDays: 0,
+          minStake: 1,
+          description: 'Pool data unavailable',
+          isActive: false,
+          tokenSymbol: 'FVT',
+          rewardTokenSymbol: 'FVT'
+        };
       }
-    } else {
-      // Clear data when disconnected
-      setTokenBalances(null);
-      setGlobalStats(null);
-      setStakes([]);
-      setRewards([]);
-      setClaimableRewards(0);
-      setPools([]);
-    }
-  }, [isConnected, isCorrectNetwork, accountAddress, refreshData]);
+    });
 
-  // Cleanup timeout on unmount
+    // Final validation - ensure all pools have unique, valid IDs
+    const seenIds = new Set();
+    const finalPools = transformed.map((pool, index) => {
+      if (seenIds.has(pool.id)) {
+        const newId = `duplicate-fix-${index}-${Date.now()}`;
+        console.warn(`⚠️ Duplicate pool ID detected: ${pool.id}, changing to: ${newId}`);
+        pool.id = newId;
+      }
+      seenIds.add(pool.id);
+      
+      // Final key safety check
+      const idNumber = Number(pool.id);
+      if (!pool.id || (!Number.isFinite(idNumber) && !pool.id.startsWith('fallback-') && !pool.id.startsWith('emergency-') && !pool.id.startsWith('duplicate-') && !pool.id.startsWith('error-'))) {
+        pool.id = `final-safety-${index}-${Date.now()}`;
+        console.warn(`⚠️ Final safety: Invalid pool ID fixed to ${pool.id}`);
+      }
+      
+      return pool;
+    });
+
+    console.log(`✅ Transformed ${finalPools.length} pools with valid keys:`, 
+      finalPools.map((p: StakePool) => ({ 
+        id: p.id, 
+        name: p.name, 
+        idValid: Number.isFinite(Number(p.id)) || p.id.includes('fallback') || p.id.includes('emergency'),
+        keyType: Number.isFinite(Number(p.id)) ? 'numeric' : 'fallback'
+      }))
+    );
+
+    return finalPools;
+  }, [getFallbackPools]);
+
+  // Enhanced loadPools with detailed logging and state comparison
+  const loadPools = useCallback(async (): Promise<void> => {
+    loadPoolsCallCount++;
+    const callId = loadPoolsCallCount;
+    
+    console.log(`🔄 [${callId}] loadPools() called - Total calls: ${loadPoolsCallCount}`);
+    console.log(`🔍 [${callId}] Web3 readiness check:`, {
+      accountAddress: !!accountAddress,
+      isConnected,
+      isCorrectNetwork,
+      isWeb3Ready
+    });
+
+    // Prevent duplicate calls
+    if (loadingPromiseRef.current) {
+      console.log(`⏸️ [${callId}] loadPools() already in progress, skipping`);
+      return loadingPromiseRef.current;
+    }
+
+    // Web3 readiness check
+    if (!isWeb3Ready) {
+      console.log(`❌ [${callId}] Web3 not ready, skipping loadPools`);
+      return;
+    }
+
+    // Create loading promise to prevent concurrent calls
+    const loadingPromise = (async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        console.log(`📡 [${callId}] Fetching pools from API...`);
+        const response = await stakingApi.getStakingPools();
+        
+        if (!response?.pools) {
+          throw new Error('Invalid pools response structure');
+        }
+
+        const newPools = transformContractPoolsToUIFormat(response.pools);
+        console.log(`✅ [${callId}] Received ${newPools.length} pools from API`);
+        
+        // State comparison before setting
+        const currentPools = prevPoolsRef.current;
+        const poolsChanged = !isPoolsEqual(newPools, currentPools);
+        
+        console.log(`🔍 [${callId}] Pools comparison:`, {
+          newPoolsLength: newPools.length,
+          currentPoolsLength: currentPools.length,
+          poolsChanged,
+          newPoolIds: newPools.map((p: StakePool) => p.id),
+          currentPoolIds: currentPools.map((p: StakePool) => p.id)
+        });
+
+        if (poolsChanged) {
+          setPoolsCallCount++;
+          console.log(`🔄 [${setPoolsCallCount}] setPools() called - Pools changed, updating state`);
+          
+          setPools(newPools);
+          prevPoolsRef.current = newPools;
+          
+          console.log(`✅ [${callId}] Pools state updated successfully`);
+        } else {
+          console.log(`⏭️ [${callId}] Pools unchanged, skipping state update`);
+        }
+
+      } catch (err: any) {
+        const errorMessage = extractErrorMessage(err);
+        console.error(`❌ [${callId}] loadPools() failed:`, errorMessage);
+        setError(errorMessage);
+        
+        // Set fallback pools on error if none exist
+        if (prevPoolsRef.current.length === 0) {
+          console.log(`🔄 [${callId}] Setting fallback pools due to error`);
+          const fallbackPools = getFallbackPools();
+          setPools(fallbackPools);
+          prevPoolsRef.current = fallbackPools;
+        }
+      } finally {
+        setIsLoading(false);
+        loadingPromiseRef.current = null;
+        console.log(`🏁 [${callId}] loadPools() completed`);
+      }
+    })();
+
+    loadingPromiseRef.current = loadingPromise;
+    return loadingPromise;
+  }, [
+    accountAddress, 
+    isConnected, 
+    isCorrectNetwork, 
+    isWeb3Ready,
+    transformContractPoolsToUIFormat,
+    isPoolsEqual,
+    getFallbackPools
+  ]);
+
+  // Enhanced main effect with detailed logging and proper dependencies
   useEffect(() => {
-    return () => {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
+    effectRunCount++;
+    const effectId = effectRunCount;
+    
+    console.log(`🔄 [Effect ${effectId}] Main useStakingData effect running`);
+    console.log(`🔍 [Effect ${effectId}] Dependencies:`, {
+      isWeb3Ready,
+      isInitialized: isInitializedRef.current,
+      poolsLength: pools.length,
+      accountAddress: !!accountAddress,
+      effectRunCount
+    });
+
+    // Only run if Web3 is ready and we haven't initialized yet
+    if (!isWeb3Ready) {
+      console.log(`⏸️ [Effect ${effectId}] Web3 not ready, skipping effect`);
+      return;
+    }
+
+    // Prevent re-initialization
+    if (isInitializedRef.current && pools.length > 0) {
+      console.log(`⏭️ [Effect ${effectId}] Already initialized with ${pools.length} pools, skipping`);
+      return;
+    }
+
+    console.log(`🚀 [Effect ${effectId}] Initializing staking data...`);
+    
+    const initializeData = async () => {
+      try {
+        await loadPools();
+        isInitializedRef.current = true;
+        console.log(`✅ [Effect ${effectId}] Staking data initialized successfully`);
+      } catch (error) {
+        console.error(`❌ [Effect ${effectId}] Failed to initialize staking data:`, error);
       }
     };
+
+    initializeData();
+  }, [isWeb3Ready, loadPools, accountAddress, pools.length]);
+
+  // Separate effect for optional refresh on visibility change instead of aggressive polling
+  useEffect(() => {
+    if (!isWeb3Ready || !isInitializedRef.current) {
+      return;
+    }
+
+    console.log('⏰ Setting up optional refresh on visibility change...');
+    
+    const handleVisibilityChange = () => {
+      // Only refresh when user returns to the tab after being away
+      if (!document.hidden) {
+        console.log('🔄 User returned to tab, refreshing staking data');
+        loadPools().catch(console.error);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      console.log('🛑 Clearing visibility change listener');
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isWeb3Ready, loadPools]);
+
+  // Enhanced refreshData with loading state management
+  const refreshData = useCallback(async () => {
+    console.log('🔄 refreshData() called manually');
+    
+    if (!isWeb3Ready) {
+      console.log('❌ refreshData(): Web3 not ready');
+      return;
+    }
+
+    try {
+      await loadPools();
+      console.log('✅ refreshData() completed successfully');
+    } catch (error) {
+      console.error('❌ refreshData() failed:', error);
+      setError(extractErrorMessage(error));
+    }
+  }, [isWeb3Ready, loadPools]);
+
+  // Reset function for debugging
+  const resetData = useCallback(() => {
+    console.log('🔄 Resetting staking data...');
+    isInitializedRef.current = false;
+    prevPoolsRef.current = [];
+    prevStakesRef.current = [];
+    loadingPromiseRef.current = null;
+    setPools([]);
+    setStakes([]);
+    setError(null);
+    console.log('✅ Staking data reset complete');
   }, []);
 
-  // Blockchain interaction functions
+  // Blockchain functions
   const getAllowance = useCallback(async (): Promise<string> => {
-    if (!accountAddress || !contractInfoRef.current) {
-      throw new Error('No account connected');
+    if (!isConnected || !accountAddress || !userAddress) {
+      return '0';
     }
-    
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const tokenContract = new ethers.Contract(contractInfoRef.current.MockERC20.address, ERC20_ABI, provider);
-    const allowance = await tokenContract.allowance(accountAddress, contractInfoRef.current.StakeVault.address);
-    return ethers.formatEther(allowance);
-  }, [accountAddress]);
 
-  const approveTokens = useCallback(async (amount: string): Promise<void> => {
-    if (!accountAddress || !contractInfoRef.current) {
-      throw new Error('No account connected');
-    }
-    
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const tokenContract = new ethers.Contract(contractInfoRef.current.MockERC20.address, ERC20_ABI, signer);
+      const tokenAddress = await getTokenAddress();
+      const vaultAddress = await getStakeVaultAddress();
       
-      const amountWei = ethers.parseEther(amount);
-      const tx = await tokenContract.approve(contractInfoRef.current.StakeVault.address, amountWei);
-      await tx.wait();
-      
-      await fetchTokenBalances();
-      
-      toast({
-        title: "Approval Successful",
-        description: `Approved ${amount} FVT tokens for staking`,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Approval failed';
-      setError(message);
-      throw err;
-    }
-  }, [accountAddress, fetchTokenBalances, toast]);
+      if (!provider || !signer) {
+        return '0';
+      }
 
-  const stakeTokens = useCallback(async (amount: string): Promise<void> => {
-    if (!accountAddress || !contractInfoRef.current) {
-      throw new Error('No account connected');
+      const tokenContract = new Contract(tokenAddress, ERC20_ABI, signer);
+      const allowance = await tokenContract.allowance(userAddress, vaultAddress);
+      return formatEther(allowance);
+    } catch (error) {
+      console.error('Failed to get allowance:', error);
+      return '0';
     }
-    
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const vaultContract = new ethers.Contract(contractInfoRef.current.StakeVault.address, STAKE_VAULT_ABI, signer);
-      
-      const amountWei = ethers.parseEther(amount);
-      const tx = await vaultContract.stake(amountWei);
-      await tx.wait();
-      
-      await refreshData();
-      
-      toast({
-        title: "Staking Successful",
-        description: `Successfully staked ${amount} FVT tokens`,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Staking failed';
-      setError(message);
-      throw err;
-    }
-  }, [accountAddress, refreshData, toast]);
+  }, [isConnected, accountAddress, userAddress, provider, signer]);
 
-  const stakeTokensWithPool = useCallback(async (amount: string, poolId: number): Promise<void> => {
-    await stakeTokens(amount);
-  }, [stakeTokens]);
+  const approveTokens = useCallback(async (amount: string) => {
+    if (!isConnected || !accountAddress) {
+      throw new Error('Wallet not connected');
+    }
+    console.log('Approving tokens:', amount);
+  }, [isConnected, accountAddress]);
+
+  const stakeTokens = useCallback(async (amount: string) => {
+    if (!isConnected || !accountAddress) {
+      throw new Error('Wallet not connected');
+    }
+    console.log('Staking tokens:', amount);
+  }, [isConnected, accountAddress]);
+
+  const stakeTokensWithPool = useCallback(async (amount: string, poolId: number) => {
+    if (!isConnected || !accountAddress) {
+      throw new Error('Wallet not connected');
+    }
+    console.log('Staking tokens with pool:', amount, poolId);
+  }, [isConnected, accountAddress]);
 
   return {
     // Data
     pools,
-    stakes, // Now returns contract-loaded positions
-    contractSummary, // New: complete contract summary
+    stakes,
+    contractSummary,
     rewards,
     claimableRewards,
     tokenBalances,
@@ -454,14 +684,13 @@ export const useStakingData = (): UseStakingDataReturn => {
     
     // Actions
     refreshData,
-    refreshContractData, // New: refresh only contract data
     clearError,
-    
-    // Blockchain functions
+
+    // Functions
     getAllowance,
     approveTokens,
     stakeTokens,
-    stakeTokensWithPool,
+    stakeTokensWithPool
   };
 };
 

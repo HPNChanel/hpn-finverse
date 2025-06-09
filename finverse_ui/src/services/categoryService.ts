@@ -8,12 +8,10 @@ export interface Category {
   color?: string;
   type: 'income' | 'expense' | 'both';
   parent_id?: number;
-  user_id: number;
-  is_system: boolean;
+  children_count?: number;
   is_active: boolean;
   created_at: string;
-  updated_at?: string;
-  children_count?: number;
+  updated_at: string;
 }
 
 export interface CategoryHierarchy extends Category {
@@ -29,15 +27,7 @@ export interface CategoryCreate {
   parent_id?: number;
 }
 
-export interface CategoryUpdate {
-  name?: string;
-  description?: string;
-  icon?: string;
-  color?: string;
-  type?: 'income' | 'expense' | 'both';
-  parent_id?: number;
-  is_active?: boolean;
-}
+export interface CategoryUpdate extends Partial<CategoryCreate> {}
 
 class CategoryService {
   async getCategories(): Promise<Category[]> {

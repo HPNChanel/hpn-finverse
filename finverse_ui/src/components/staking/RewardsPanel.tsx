@@ -1,5 +1,6 @@
 import { Award, Clock, TrendingUp } from 'lucide-react';
 import { RewardHistory } from '@/services/stakingService';
+import { StakingSimulator } from './StakingSimulator';
 
 interface RewardsPanelProps {
   rewards: RewardHistory[];
@@ -61,6 +62,11 @@ export function RewardsPanel({ rewards, claimableAmount, onClaim }: RewardsPanel
           Claim {formatCurrency(claimableAmount)}
         </button>
       )}
+
+      {/* Staking Simulator */}
+      <div className="mb-4">
+        <StakingSimulator />
+      </div>
 
       {/* Recent Rewards */}
       <div>

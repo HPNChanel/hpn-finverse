@@ -10,25 +10,90 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
+import { formatUnits } from 'ethers';
+import { UnstakeButton } from './UnstakeButton';
 
 interface StakePositionCardProps {
   position: StakeProfile;
   onRefresh: () => void;
-  formatCurrency: (amount: number) => string;
-  formatPercentage: (value: number) => string;
+  formatCurrency?: (amount: number) => string;
+  formatPercentage?: (value: number) => string;
 }
 
 export function StakePositionCard({ 
   position, 
   onRefresh, 
-  formatCurrency, 
-  formatPercentage 
+  formatCurrency: customFormatCurrency, 
+  formatPercentage: customFormatPercentage 
 }: StakePositionCardProps) {
   const [showActions, setShowActions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isPredicting, setIsPredicting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const { toast } = useToast();
+
+  // Enhanced formatting functions
+  const formatCurrency = (amount: number | string | bigint): string => {
+    if (customFormatCurrency) {
+      return customFormatCurrency(typeof amount === 'number' ? amount : parseFloat(amount.toString()));
+    }
+    
+    try {
+      let numValue: number;
+      
+      if (typeof amount === 'bigint') {
+        numValue = parseFloat(formatUnits(amount, 18));
+      } else if (typeof amount === 'string' && amount.length > 15) {
+        // Likely wei amount
+        numValue = parseFloat(formatUnits(amount, 18));
+      } else {
+        numValue = typeof amount === 'number' ? amount : parseFloat(amount.toString());
+      }
+      
+      if (numValue > 1000000) {
+        return `${(numValue / 1000000).toFixed(2)}M FVT`;
+      } else if (numValue > 1000) {
+        return `${(numValue / 1000).toFixed(2)}K FVT`;
+      } else {
+        return `${numValue.toFixed(4)} FVT`;
+      }
+    } catch (error) {
+      console.warn('Error formatting currency:', error);
+      return '0.0000 FVT';
+    }
+  };
+
+  const formatPercentage = (value: number): string => {
+    if (customFormatPercentage) {
+      return customFormatPercentage(value);
+    }
+    
+    if (!value || isNaN(value)) {
+      return 'N/A';
+    }
+    
+    return `${value.toFixed(1)}%`;
+  };
+
+  const formatClaimableAmount = (rewards: number | string | bigint): string => {
+    try {
+      let numValue: number;
+      
+      if (typeof rewards === 'bigint') {
+        numValue = parseFloat(formatUnits(rewards, 18));
+      } else if (typeof rewards === 'string' && rewards.length > 15) {
+        // Likely wei amount
+        numValue = parseFloat(formatUnits(rewards, 18));
+      } else {
+        numValue = typeof rewards === 'number' ? rewards : parseFloat(rewards.toString());
+      }
+      
+      return numValue.toFixed(6);
+    } catch (error) {
+      console.warn('Error formatting claimable amount:', error);
+      return '0.000000';
+    }
+  };
 
   const handleUnstake = async (amount: number) => {
     try {
@@ -264,11 +329,11 @@ export function StakePositionCard({
           </span>
         </div>
         
-        {position.stake.claimable_rewards && position.stake.claimable_rewards > 0 && (
+        {position.stake.claimable_rewards && parseFloat(formatClaimableAmount(position.stake.claimable_rewards)) > 0 && (
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Claimable</span>
             <span className="font-medium text-orange-600">
-              {formatCurrency(position.stake.claimable_rewards)}
+              {formatClaimableAmount(position.stake.claimable_rewards)} FVT
             </span>
           </div>
         )}
@@ -318,6 +383,15 @@ export function StakePositionCard({
             {formatCurrency(position.rewards.earned / Math.max(position.rewards.duration_days, 1))}
           </span>
         </div>
+      </div>
+
+      {/* Unstake Action */}
+      <div className="mb-4">
+        <UnstakeButton 
+          position={position} 
+          onUnstakeSuccess={onRefresh}
+          className="w-full"
+        />
       </div>
 
       {/* Footer */}

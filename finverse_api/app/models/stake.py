@@ -1,5 +1,5 @@
 """
-Unified Staking model for FinVerse API
+Unified Staking model for FinVerse API - ETH Only
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ class StakeStatus(str, PyEnum):
     """Enum for stake status"""
     PENDING = "PENDING"
     ACTIVE = "ACTIVE"
+    UNSTAKED = "UNSTAKED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
 
 class Stake(Base):
-    """Unified Stake model combining legacy stakes and staking_positions functionality"""
+    """ETH-only Stake model for FinVerse staking"""
     
     __tablename__ = "stakes"
     
@@ -29,23 +30,25 @@ class Stake(Base):
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False, index=True)
     pool_id = Column(String(50), nullable=False, index=True, comment="Staking pool identifier")
     
-    # Financial fields with high precision
-    amount = Column(DECIMAL(18, 8), nullable=False, comment="Staked amount with crypto precision")
-    claimable_rewards = Column(DECIMAL(18, 8), default=0.00000000, nullable=False, comment="Rewards available to claim")
-    rewards_earned = Column(DECIMAL(18, 8), default=0.00000000, nullable=False, comment="Total rewards earned")
-    predicted_reward = Column(DECIMAL(18, 8), nullable=True, comment="ML predicted reward for this stake")
+    # Financial fields with high precision (ETH only)
+    amount = Column(DECIMAL(18, 8), nullable=False, comment="Staked ETH amount with crypto precision")
+    claimable_rewards = Column(DECIMAL(18, 8), default=0.00000000, nullable=False, comment="ETH rewards available to claim")
+    rewards_earned = Column(DECIMAL(18, 8), default=0.00000000, nullable=False, comment="Total ETH rewards earned")
+    predicted_reward = Column(DECIMAL(18, 8), nullable=True, comment="ML predicted ETH reward for this stake")
     
     # Time tracking
     staked_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="When the stake was created")
     unlock_at = Column(DateTime, nullable=True, comment="When stake can be withdrawn")
+    unstaked_at = Column(DateTime, nullable=True, comment="When the stake was withdrawn")
     lock_period = Column(Integer, nullable=False, default=0, comment="Lock period in days")
     
     # Rate tracking with snapshots
-    reward_rate = Column(DECIMAL(5, 4), nullable=False, default=0.0000, comment="Annual reward rate as percentage (4 decimals)")
-    apy_snapshot = Column(DECIMAL(5, 2), nullable=True, comment="APY at the time of staking (2 decimals)")
+    reward_rate = Column(DECIMAL(5, 2), nullable=False, default=0.00, comment="Annual reward rate as percentage (up to 999.99%)")
+    apy_snapshot = Column(DECIMAL(5, 2), nullable=True, comment="APY at the time of staking (up to 999.99%)")
     
     # Blockchain & status
     tx_hash = Column(String(100), nullable=True, unique=True, comment="Blockchain transaction hash")
+    unstake_tx_hash = Column(String(100), nullable=True, unique=True, comment="Unstake transaction hash")
     is_active = Column(Boolean, default=True, nullable=False, comment="Whether stake is currently active")
     status = Column(String(20), nullable=False, default=StakeStatus.ACTIVE, comment="Stake status enum")
     
@@ -94,12 +97,15 @@ class Stake(Base):
             "amount": float(self.amount) if self.amount else 0.0,
             "staked_at": self.staked_at.isoformat() if self.staked_at else None,
             "unlock_at": self.unlock_at.isoformat() if self.unlock_at else None,
+            "unstaked_at": self.unstaked_at.isoformat() if self.unstaked_at else None,
             "lock_period": self.lock_period,
             "reward_rate": float(self.reward_rate) if self.reward_rate else 0.0,
             "apy_snapshot": float(self.apy_snapshot) if self.apy_snapshot else None,
             "claimable_rewards": float(self.claimable_rewards) if self.claimable_rewards else 0.0,
             "rewards_earned": float(self.rewards_earned) if self.rewards_earned else 0.0,
             "tx_hash": self.tx_hash,
+            "unstake_tx_hash": self.unstake_tx_hash,
+            "token_type": "ETH",  # Always ETH now
             "is_active": self.is_active,
             "status": self.status,
             "model_confidence": self.model_confidence,

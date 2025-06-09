@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useApiError } from '@/utils/errorHandler';
+import { extractErrorMessage } from '@/utils/errorHelpers';
 import api from '@/lib/api';
 
 // Import dashboard components with correct paths
@@ -156,6 +157,12 @@ function DashboardContent() {
       }
     } catch (error) {
       console.error('Failed to refresh budget data:', error);
+      // Add user notification
+      toast({
+        title: "Refresh Failed",
+        description: extractErrorMessage(error),
+        variant: "destructive",
+      });
     }
   };
 
@@ -277,3 +284,4 @@ export function Dashboard() {
     </ErrorBoundary>
   );
 }
+

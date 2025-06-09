@@ -24,11 +24,15 @@ from app.routers import (
     financial_goal_router,
     category_router,
     budget_router,
-    staking_router
+    staking_router,
+    settings_router
 )
 
 # Import wallet router from financial_account
 from app.routers.financial_account import wallet_router
+# Import ETH transfer wallet router
+from app.routers.wallet import router as eth_wallet_router
+from app.routers.eth_transfer import router as eth_transfer_router
 
 # Import optional routers with error handling
 try:
@@ -129,10 +133,16 @@ api_v1_router.include_router(transaction_router)
 api_v1_router.include_router(financial_account_router)
 api_v1_router.include_router(wallet_router)  # Add wallet router
 print("✅ Wallet router included at /api/v1/wallets")
+api_v1_router.include_router(eth_wallet_router)  # Add ETH transfer wallet router
+print("✅ ETH transfer wallet router included at /api/v1/wallet")
+api_v1_router.include_router(eth_transfer_router)  # Add specific ETH transfer router
+print("✅ ETH transfer router included at /api/v1/eth-transfer")
 api_v1_router.include_router(financial_goal_router)
 api_v1_router.include_router(category_router)
 api_v1_router.include_router(budget_router)
 api_v1_router.include_router(staking_router)
+api_v1_router.include_router(settings_router)
+print("✅ Settings router included")
 
 # Include optional routers if available
 if profile_available and profile_router:
@@ -201,7 +211,8 @@ async def root():
             "categories": "/api/v1/categories",
             "budget": "/api/v1/budgets",
             "financial_goals": "/api/v1/goals",
-            "staking": "/api/v1/staking"
+            "staking": "/api/v1/staking",
+            "settings": "/api/v1/settings"
         },
         "optional_endpoints": {
             "profile": "/api/v1/profile" if profile_available else "not available",

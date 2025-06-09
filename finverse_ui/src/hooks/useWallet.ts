@@ -1,493 +1,597 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { ethers } from 'ethers';
-import { useToast } from '@/hooks/use-toast';
-import { ErrorHandler } from '@/utils/errorHandler';
-import { loadContractInfo, ERC20_ABI, FALLBACK_CONTRACTS } from '@/lib/contracts';
+import { useState, useEffect, useCallback } from 'react';
+import { BrowserProvider, formatEther } from 'ethers';
+
+// Add proper type for window.ethereum
+declare global {
+  interface Window {
+    ethereum?: {
+      isMetaMask?: boolean;
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+      on: (event: string, handler: (...args: unknown[]) => void) => void;
+      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
+    };
+  }
+}
+
+interface WalletAccount {
+  address: string;
+  balance: string;
+  isActive: boolean;
+}
 
 interface UseWalletReturn {
-  // Account state
-  accountAddress: string | null;
-  shortAddress: string | null;
+  // Connection state
   isConnected: boolean;
   isConnecting: boolean;
   isReconnecting: boolean;
+  isMetaMaskInstalled: boolean;
   
-  // Balances
+  // Account and balance info
+  accountAddress: string | null;
+  currentAccount: string | null;
+  accounts: WalletAccount[];
+  balance: string;
   balanceETH: string;
   balanceFVT: string;
   formattedBalanceETH: string;
-  formattedBalanceFVT: string;
   
   // Network info
-  chainId: number | null;
+  chainId: string | null;
   isCorrectNetwork: boolean;
-  networkName: string | null;
-  
-  // Contract info
-  tokenAddress: string | null;
-  
-  // Error handling
-  error: string | null;
-  
-  // Installation check
-  isMetaMaskInstalled: boolean;
+  networkName: string;
   
   // Actions
   connectWallet: () => Promise<void>;
+  connect: () => Promise<void>;
+  disconnect: () => void;
   disconnectWallet: () => void;
   reconnectWallet: () => Promise<void>;
+  switchAccount: (address: string) => Promise<void>;
   switchToHardhatNetwork: () => Promise<void>;
+  
+  // Balance management
+  refreshBalance: (address?: string) => Promise<void>;
   refreshBalances: () => Promise<void>;
+  refreshAllBalances: () => Promise<void>;
+  getBalance: (address: string) => Promise<string>;
+  
+  // Error handling
+  error: string | null;
   clearError: () => void;
+  
+  // Provider
+  provider: BrowserProvider | null;
+  
+  // Token info (for FVT compatibility)
+  tokenAddress: string | null;
 }
 
-const HARDHAT_CHAIN_ID = 31337;
-const HARDHAT_NETWORK_CONFIG = {
-  chainId: `0x${HARDHAT_CHAIN_ID.toString(16)}`,
-  chainName: 'Hardhat Local',
-  nativeCurrency: {
-    name: 'ETH',
-    symbol: 'ETH',
-    decimals: 18,
-  },
-  rpcUrls: ['http://127.0.0.1:8545'],
-  blockExplorerUrls: ['http://localhost:8545'],
-};
-
-export const useWallet = (): UseWalletReturn => {
-  // Core state
-  const [accountAddress, setAccountAddress] = useState<string | null>(null);
-  const [balanceETH, setBalanceETH] = useState<string>('0');
-  const [balanceFVT, setBalanceFVT] = useState<string>('0');
-  const [chainId, setChainId] = useState<number | null>(null);
-  const [tokenAddress, setTokenAddress] = useState<string | null>(null);
+export function useWallet(): UseWalletReturn {
+  // Connection state
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [isMetaMaskInstalled, setIsMetaMaskInstalled] = useState(false);
   
-  // UI state
-  const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+  // Account and balance info
+  const [currentAccount, setCurrentAccount] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<WalletAccount[]>([]);
+  const [balance, setBalance] = useState('0.0');
+  const [balanceFVT, setBalanceFVT] = useState('0.0');
+  
+  // Network info
+  const [chainId, setChainId] = useState<string | null>(null);
+  
+  // Error handling
   const [error, setError] = useState<string | null>(null);
   
-  // Refs to prevent multiple listeners
-  const listenersAttached = useRef<boolean>(false);
-  const provider = useRef<ethers.BrowserProvider | null>(null);
-  
-  const { toast } = useToast();
+  // Provider
+  const [provider, setProvider] = useState<BrowserProvider | null>(null);
 
   // Derived state
-  const isMetaMaskInstalled = typeof window !== 'undefined' && !!window.ethereum;
-  const isConnected = !!accountAddress;
-  const isCorrectNetwork = chainId === HARDHAT_CHAIN_ID;
-  
-  const shortAddress = accountAddress 
-    ? `${accountAddress.slice(0, 6)}...${accountAddress.slice(-4)}`
-    : null;
-    
-  const formattedBalanceETH = parseFloat(balanceETH).toFixed(4);
-  const formattedBalanceFVT = parseFloat(balanceFVT).toFixed(2);
-  
-  const networkName = chainId === HARDHAT_CHAIN_ID ? 'Hardhat Local' : 
-                     chainId === 1 ? 'Ethereum Mainnet' :
-                     chainId === 11155111 ? 'Sepolia Testnet' :
-                     chainId ? `Unknown (${chainId})` : null;
+  const accountAddress = currentAccount;
+  const balanceETH = balance;
+  const formattedBalanceETH = parseFloat(balance).toFixed(4);
+  const isCorrectNetwork = chainId === '31337' || chainId === '1337'; // Hardhat local network
+  const networkName = isCorrectNetwork ? 'Hardhat Local' : chainId ? `Chain ${chainId}` : 'Unknown';
+  const tokenAddress = null; // For future FVT token support
+
+  // Check if MetaMask is installed
+  const checkMetaMaskInstallation = useCallback(() => {
+    const installed = typeof window !== 'undefined' && 
+                     typeof window.ethereum !== 'undefined' && 
+                     window.ethereum.isMetaMask === true;
+    setIsMetaMaskInstalled(installed);
+    return installed;
+  }, []);
+
+  // Initialize provider
+  const initProvider = useCallback(async () => {
+    if (typeof window !== 'undefined' && window.ethereum) {
+      const browserProvider = new BrowserProvider(window.ethereum);
+      setProvider(browserProvider);
+      return browserProvider;
+    }
+    return null;
+  }, []);
 
   // Clear error
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
-  // Initialize provider
-  const initializeProvider = useCallback(() => {
-    if (!window.ethereum) return null;
+  // Get balance for a specific address
+  const getBalance = useCallback(async (address: string): Promise<string> => {
+    if (!provider) return '0.0';
     
-    if (!provider.current) {
-      provider.current = new ethers.BrowserProvider(window.ethereum);
-    }
-    return provider.current;
-  }, []);
-
-  // Load contract information
-  const loadContractData = useCallback(async () => {
     try {
-      const contractInfo = await loadContractInfo();
-      if (contractInfo?.contracts?.MockERC20?.address) {
-        setTokenAddress(contractInfo.contracts.MockERC20.address);
-      } else {
-        setTokenAddress(FALLBACK_CONTRACTS.MockERC20.address);
+      const balance = await provider.getBalance(address);
+      return formatEther(balance);
+    } catch (error) {
+      console.error('Failed to get balance:', error);
+      return '0.0';
+    }
+  }, [provider]);
+
+  // Refresh balance for current or specified account
+  const refreshBalance = useCallback(async (address?: string) => {
+    if (!provider) return;
+    
+    const targetAddress = address || currentAccount;
+    if (!targetAddress) return;
+
+    try {
+      const balance = await provider.getBalance(targetAddress);
+      const formattedBalance = formatEther(balance);
+      
+      if (targetAddress === currentAccount) {
+        setBalance(formattedBalance);
       }
-    } catch (err) {
-      console.warn('Failed to load contract info, using fallback:', err);
-      setTokenAddress(FALLBACK_CONTRACTS.MockERC20.address);
+      
+      // Update in accounts array if it exists
+      setAccounts(prev => prev.map(acc => 
+        acc.address === targetAddress 
+          ? { ...acc, balance: formattedBalance }
+          : acc
+      ));
+    } catch (error) {
+      console.error('Failed to refresh balance:', error);
     }
-  }, []);
+  }, [provider, currentAccount]);
 
-  // Fetch balances for current account
-  const fetchBalances = useCallback(async (address: string) => {
-    if (!address || !isMetaMaskInstalled) return;
+  // Refresh all account balances
+  const refreshAllBalances = useCallback(async () => {
+    if (!provider || accounts.length === 0) return;
 
     try {
-      const ethProvider = initializeProvider();
-      if (!ethProvider) throw new Error('Provider not available');
-
-      // Fetch ETH balance
-      const ethBalance = await ethProvider.getBalance(address);
-      setBalanceETH(ethers.formatEther(ethBalance));
-
-      // Fetch FVT balance if token address is available
-      if (tokenAddress) {
+      const balancePromises = accounts.map(async (account) => {
         try {
-          const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, ethProvider);
-          const fvtBalance = await tokenContract.balanceOf(address);
-          setBalanceFVT(ethers.formatEther(fvtBalance));
-        } catch (tokenError) {
-          console.warn('Failed to fetch FVT balance:', tokenError);
-          setBalanceFVT('0');
+          const balance = await provider.getBalance(account.address);
+          return {
+            ...account,
+            balance: formatEther(balance)
+          };
+        } catch (error) {
+          console.error(`Failed to get balance for ${account.address}:`, error);
+          return account;
+        }
+      });
+
+      const updatedAccounts = await Promise.all(balancePromises);
+      setAccounts(updatedAccounts);
+      
+      // Update current balance if needed
+      if (currentAccount) {
+        const currentAcc = updatedAccounts.find(acc => acc.address === currentAccount);
+        if (currentAcc) {
+          setBalance(currentAcc.balance);
         }
       }
-    } catch (err) {
-      console.error('Failed to fetch balances:', err);
-      ErrorHandler.logError(err as Error, 'Fetch balances');
+    } catch (error) {
+      console.error('Failed to refresh all balances:', error);
     }
-  }, [isMetaMaskInstalled, tokenAddress, initializeProvider]);
+  }, [provider, accounts, currentAccount]);
 
-  // Refresh balances manually
-  const refreshBalances = useCallback(async () => {
-    if (!accountAddress) return;
-    
-    setIsReconnecting(true);
-    try {
-      await fetchBalances(accountAddress);
-      toast({
-        title: "Balances Updated",
-        description: "Wallet balances have been refreshed",
-      });
-    } catch (err) {
-      toast({
-        title: "Refresh Failed",
-        description: "Failed to refresh wallet balances",
-        variant: "destructive",
-      });
-    } finally {
-      setIsReconnecting(false);
-    }
-  }, [accountAddress, fetchBalances, toast]);
+  // Alias for refreshAllBalances
+  const refreshBalances = refreshAllBalances;
 
-  // Handle account changes
-  const handleAccountsChanged = useCallback(async (accounts: string[]) => {
-    console.log('👥 Accounts changed:', accounts);
-    
-    setIsReconnecting(true);
-    setError(null);
-    
-    if (accounts.length === 0) {
-      // User disconnected
-      setAccountAddress(null);
-      setBalanceETH('0');
-      setBalanceFVT('0');
-      toast({
-        title: "Wallet Disconnected",
-        description: "No accounts are connected",
-        variant: "destructive",
-      });
-    } else {
-      // Account switched
-      const newAccount = accounts[0];
-      setAccountAddress(newAccount);
-      
-      // Fetch balances for new account
-      await fetchBalances(newAccount);
-      
-      toast({
-        title: "Account Switched",
-        description: `Switched to ${newAccount.slice(0, 6)}...${newAccount.slice(-4)}`,
-      });
-    }
-    
-    setIsReconnecting(false);
-  }, [fetchBalances, toast]);
-
-  // Handle chain changes
-  const handleChainChanged = useCallback(async (chainIdHex: string) => {
-    const newChainId = parseInt(chainIdHex, 16);
-    console.log('🔗 Chain changed:', newChainId);
-    
-    setChainId(newChainId);
-    
-    if (newChainId !== HARDHAT_CHAIN_ID) {
-      setError(`Please switch to Hardhat Local network (Chain ID: ${HARDHAT_CHAIN_ID})`);
-      toast({
-        title: "Wrong Network",
-        description: "Please switch to Hardhat Local network",
-        variant: "destructive",
-      });
-    } else {
-      setError(null);
-      toast({
-        title: "Network Connected",
-        description: "Connected to Hardhat Local network",
-      });
-    }
-    
-    // Refresh balances on chain change
-    if (accountAddress) {
-      await fetchBalances(accountAddress);
-    }
-  }, [accountAddress, fetchBalances, toast]);
-
-  // Setup event listeners
-  const setupEventListeners = useCallback(() => {
-    if (!window.ethereum || listenersAttached.current) return;
-
-    console.log('🎧 Setting up wallet event listeners');
-    
-    // Remove any existing listeners first
-    window.ethereum.removeAllListeners?.('accountsChanged');
-    window.ethereum.removeAllListeners?.('chainChanged');
-    
-    // Add new listeners
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('chainChanged', handleChainChanged);
-    
-    listenersAttached.current = true;
-    
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
-      }
-      listenersAttached.current = false;
-    };
-  }, [handleAccountsChanged, handleChainChanged]);
-
-  // Connect wallet
+  // Connect to MetaMask
   const connectWallet = useCallback(async () => {
-    if (!isMetaMaskInstalled) {
-      setError('MetaMask is not installed');
+    if (!checkMetaMaskInstallation()) {
+      const errorMsg = 'MetaMask not found. Please install MetaMask.';
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (isConnecting) {
+      console.log('⏳ Connection already in progress');
       return;
     }
 
-    setIsConnecting(true);
-    setError(null);
-
     try {
-      // Request account access
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      });
+      setIsConnecting(true);
+      setError(null);
 
-      if (accounts.length === 0) {
-        throw new Error('No accounts returned');
+      const browserProvider = await initProvider();
+      if (!browserProvider) {
+        throw new Error('Failed to initialize provider');
       }
 
-      const account = accounts[0];
-      setAccountAddress(account);
+      // Request account access
+      const accountsResult = await window.ethereum!.request({
+        method: 'eth_requestAccounts'
+      }) as string[];
+
+      if (accountsResult.length === 0) {
+        throw new Error('No accounts found');
+      }
+
+      // Get all account balances
+      const accountsWithBalances = await Promise.all(
+        accountsResult.map(async (address: string) => {
+          try {
+            const balance = await browserProvider.getBalance(address);
+            return {
+              address,
+              balance: formatEther(balance),
+              isActive: address === accountsResult[0]
+            };
+          } catch (error) {
+            console.error(`Failed to get balance for ${address}:`, error);
+            return {
+              address,
+              balance: '0.0',
+              isActive: address === accountsResult[0]
+            };
+          }
+        })
+      );
+
+      setAccounts(accountsWithBalances);
+      setCurrentAccount(accountsResult[0]);
+      setBalance(accountsWithBalances[0]?.balance || '0.0');
+      setIsConnected(true);
 
       // Get chain ID
-      const chainIdHex = await window.ethereum.request({
-        method: 'eth_chainId',
-      });
-      const currentChainId = parseInt(chainIdHex, 16);
-      setChainId(currentChainId);
+      const network = await browserProvider.getNetwork();
+      setChainId(network.chainId.toString());
 
-      // Setup event listeners
-      setupEventListeners();
-
-      // Load contract data and fetch balances
-      await loadContractData();
-      await fetchBalances(account);
-
-      toast({
-        title: "Wallet Connected",
-        description: `Connected to ${account.slice(0, 6)}...${account.slice(-4)}`,
-      });
-
-    } catch (err: any) {
-      const message = err?.message || 'Failed to connect wallet';
-      setError(message);
-      ErrorHandler.logError(err, 'Connect wallet');
-      
-      toast({
-        title: "Connection Failed",
-        description: message,
-        variant: "destructive",
-      });
+      console.log('✅ Wallet connected successfully');
+    } catch (error: unknown) {
+      console.error('❌ Failed to connect wallet:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to connect wallet';
+      setError(errorMsg);
+      throw new Error(errorMsg);
     } finally {
       setIsConnecting(false);
     }
-  }, [isMetaMaskInstalled, setupEventListeners, loadContractData, fetchBalances, toast]);
+  }, [checkMetaMaskInstallation, initProvider, isConnecting]);
 
-  // Reconnect wallet (force account selection)
+  // Alias for connectWallet
+  const connect = connectWallet;
+
+  // Reconnect wallet
   const reconnectWallet = useCallback(async () => {
-    if (!isMetaMaskInstalled) return;
-
-    setIsReconnecting(true);
-    setError(null);
+    if (!checkMetaMaskInstallation()) {
+      const errorMsg = 'MetaMask not found. Please install MetaMask.';
+      setError(errorMsg);
+      throw new Error(errorMsg);
+    }
 
     try {
-      // Force account selection by requesting accounts again
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      });
+      setIsReconnecting(true);
+      setError(null);
 
-      if (accounts.length > 0) {
-        const account = accounts[0];
-        
-        // Only update if account actually changed
-        if (account !== accountAddress) {
-          setAccountAddress(account);
-          toast({
-            title: "Account Updated",
-            description: `Switched to ${account.slice(0, 6)}...${account.slice(-4)}`,
-          });
-        }
-        
-        // Always refresh balances
-        await fetchBalances(account);
+      const browserProvider = await initProvider();
+      if (!browserProvider) {
+        throw new Error('Failed to initialize provider');
       }
-    } catch (err: any) {
-      const message = err?.message || 'Failed to reconnect wallet';
-      setError(message);
-      
-      toast({
-        title: "Reconnection Failed",
-        description: message,
-        variant: "destructive",
-      });
+
+      // Check current accounts
+      const accountsResult = await window.ethereum!.request({
+        method: 'eth_accounts'
+      }) as string[];
+
+      if (accountsResult.length > 0) {
+        // Update connection with current accounts
+        const accountsWithBalances = await Promise.all(
+          accountsResult.map(async (address: string) => {
+            try {
+              const balance = await browserProvider.getBalance(address);
+              return {
+                address,
+                balance: formatEther(balance),
+                isActive: address === accountsResult[0]
+              };
+            } catch (error) {
+              console.error(`Failed to get balance for ${address}:`, error);
+              return {
+                address,
+                balance: '0.0',
+                isActive: address === accountsResult[0]
+              };
+            }
+          })
+        );
+
+        setAccounts(accountsWithBalances);
+        setCurrentAccount(accountsResult[0]);
+        setBalance(accountsWithBalances[0]?.balance || '0.0');
+        setIsConnected(true);
+
+        // Get chain ID
+        const network = await browserProvider.getNetwork();
+        setChainId(network.chainId.toString());
+      } else {
+        // No accounts, try to connect
+        await connectWallet();
+      }
+    } catch (error: unknown) {
+      console.error('❌ Failed to reconnect wallet:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Failed to reconnect wallet';
+      setError(errorMsg);
+      throw new Error(errorMsg);
     } finally {
       setIsReconnecting(false);
     }
-  }, [isMetaMaskInstalled, accountAddress, fetchBalances, toast]);
+  }, [checkMetaMaskInstallation, initProvider, connectWallet]);
 
   // Disconnect wallet
   const disconnectWallet = useCallback(() => {
-    setAccountAddress(null);
-    setBalanceETH('0');
-    setBalanceFVT('0');
+    setIsConnected(false);
+    setCurrentAccount(null);
+    setAccounts([]);
+    setBalance('0.0');
+    setBalanceFVT('0.0');
     setChainId(null);
+    setProvider(null);
     setError(null);
-    
-    // Remove event listeners
-    if (window.ethereum) {
-      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      window.ethereum.removeListener('chainChanged', handleChainChanged);
+    console.log('🔌 Wallet disconnected');
+  }, []);
+
+  // Alias for disconnectWallet
+  const disconnect = disconnectWallet;
+
+  // Switch to different account
+  const switchAccount = useCallback(async (address: string) => {
+    if (!provider) return;
+
+    try {
+      setIsReconnecting(true);
+      
+      // Find the account in our list
+      const account = accounts.find(acc => acc.address === address);
+      if (!account) {
+        throw new Error('Account not found');
+      }
+
+      // Update active states
+      const updatedAccounts = accounts.map(acc => ({
+        ...acc,
+        isActive: acc.address === address
+      }));
+
+      setAccounts(updatedAccounts);
+      setCurrentAccount(address);
+      setBalance(account.balance);
+
+      // Request MetaMask to switch to this account
+      try {
+        await window.ethereum?.request({
+          method: 'wallet_requestPermissions',
+          params: [{ eth_accounts: {} }]
+        });
+      } catch (error) {
+        // Some wallets don't support this, that's ok
+        console.warn('Could not request account switch:', error);
+      }
+
+    } catch (error: unknown) {
+      console.error('Failed to switch account:', error);
+      setError(error instanceof Error ? error.message : 'Failed to switch account');
+      throw error;
+    } finally {
+      setIsReconnecting(false);
     }
-    listenersAttached.current = false;
-    provider.current = null;
-  }, [handleAccountsChanged, handleChainChanged]);
+  }, [provider, accounts]);
 
   // Switch to Hardhat network
   const switchToHardhatNetwork = useCallback(async () => {
-    if (!window.ethereum) return;
+    if (!window.ethereum) {
+      throw new Error('MetaMask not found');
+    }
 
     try {
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: HARDHAT_NETWORK_CONFIG.chainId }],
+        params: [{ chainId: '0x7a69' }], // 31337 in hex
       });
-    } catch (switchError: any) {
-      if (switchError.code === 4902) {
+    } catch (switchError: unknown) {
+      // This error code indicates that the chain has not been added to MetaMask.
+      if (switchError && typeof switchError === 'object' && 'code' in switchError && (switchError as { code: number }).code === 4902) {
         try {
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
-            params: [HARDHAT_NETWORK_CONFIG],
+            params: [{
+              chainId: '0x7a69',
+              chainName: 'Hardhat Local',
+              nativeCurrency: {
+                name: 'ETH',
+                symbol: 'ETH',
+                decimals: 18,
+              },
+              rpcUrls: ['http://127.0.0.1:8545'],
+              blockExplorerUrls: null,
+            }],
           });
-        } catch (addError) {
-          throw new Error('Failed to add Hardhat network');
+        } catch {
+          throw new Error('Failed to add Hardhat network to MetaMask');
         }
       } else {
-        throw switchError;
+        throw new Error('Failed to switch to Hardhat network');
       }
     }
   }, []);
 
-  // Initialize on mount
+  // Listen for account and network changes
   useEffect(() => {
-    if (!isMetaMaskInstalled) return;
+    if (!window.ethereum) return;
 
-    const initialize = async () => {
+    const handleAccountsChanged = async (...args: unknown[]) => {
       try {
-        // Load contract data first
-        await loadContractData();
-        
-        // Check if already connected
-        const accounts = await window.ethereum.request({
-          method: 'eth_accounts',
-        });
-
-        if (accounts.length > 0) {
-          const account = accounts[0];
-          setAccountAddress(account);
-
-          // Get current chain
-          const chainIdHex = await window.ethereum.request({
-            method: 'eth_chainId',
-          });
-          setChainId(parseInt(chainIdHex, 16));
-
-          // Setup listeners and fetch balances
-          setupEventListeners();
-          await fetchBalances(account);
-        } else {
-          // Setup listeners even if not connected
-          setupEventListeners();
+        const accountsList = args[0] as string[];
+        if (accountsList.length === 0) {
+          disconnectWallet();
+        } else if (accountsList[0] !== currentAccount) {
+          setCurrentAccount(accountsList[0]);
+          // Refresh balance directly to avoid dependency loops
+          if (provider) {
+            try {
+              const balance = await provider.getBalance(accountsList[0]);
+              setBalance(formatEther(balance));
+            } catch (error) {
+              console.error('Failed to refresh balance:', error);
+            }
+          }
         }
-      } catch (err) {
-        console.error('Failed to initialize wallet:', err);
-        ErrorHandler.logError(err as Error, 'Initialize wallet');
+      } catch (error) {
+        console.error('Error handling account change:', error);
       }
     };
 
-    initialize();
+    const handleChainChanged = (...args: unknown[]) => {
+      const newChainId = args[0] as string;
+      const chainIdDecimal = parseInt(newChainId, 16).toString();
+      setChainId(chainIdDecimal);
+      console.log(`🔗 Network changed to chain ID: ${chainIdDecimal}`);
+      
+      // Refresh balance when network changes
+      if (currentAccount && provider) {
+        refreshBalance(currentAccount);
+      }
+    };
 
-    // Cleanup on unmount
+    window.ethereum.on('accountsChanged', handleAccountsChanged);
+    window.ethereum.on('chainChanged', handleChainChanged);
+
     return () => {
-      if (window.ethereum) {
+      if (window.ethereum?.removeListener) {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
         window.ethereum.removeListener('chainChanged', handleChainChanged);
       }
     };
-  }, [isMetaMaskInstalled, loadContractData, setupEventListeners, fetchBalances, handleAccountsChanged, handleChainChanged]);
+  }, [currentAccount, disconnectWallet, provider, refreshBalance]);
 
-  // Refresh balances when token address changes
+  // Initialize on mount
   useEffect(() => {
-    if (accountAddress && tokenAddress) {
-      fetchBalances(accountAddress);
-    }
-  }, [accountAddress, tokenAddress, fetchBalances]);
+    const init = async () => {
+      // Check MetaMask installation
+      const installed = checkMetaMaskInstallation();
+      if (!installed) {
+        console.log('❌ MetaMask not detected');
+        return;
+      }
+
+      console.log('✅ MetaMask detected, checking connection...');
+      
+      const browserProvider = await initProvider();
+      if (!browserProvider) return;
+      
+      // Check if already connected (silent check)
+      try {
+        const accountsResult = await window.ethereum!.request({ 
+          method: 'eth_accounts' 
+        }) as string[];
+        
+        if (accountsResult.length > 0) {
+          console.log('🔗 Found existing connection, auto-reconnecting...');
+          
+          // Get all account balances
+          const accountsWithBalances = await Promise.all(
+            accountsResult.map(async (address: string) => {
+              try {
+                const balance = await browserProvider.getBalance(address);
+                return {
+                  address,
+                  balance: formatEther(balance),
+                  isActive: address === accountsResult[0]
+                };
+              } catch (error) {
+                console.error(`Failed to get balance for ${address}:`, error);
+                return {
+                  address,
+                  balance: '0.0',
+                  isActive: address === accountsResult[0]
+                };
+              }
+            })
+          );
+
+          setAccounts(accountsWithBalances);
+          setCurrentAccount(accountsResult[0]);
+          setBalance(accountsWithBalances[0]?.balance || '0.0');
+          setIsConnected(true);
+
+          // Get chain ID
+          const network = await browserProvider.getNetwork();
+          setChainId(network.chainId.toString());
+          
+          console.log('✅ Auto-reconnected successfully');
+        } else {
+          console.log('⚡ MetaMask available but not connected');
+        }
+      } catch (error) {
+        console.error('Failed to check existing connection:', error);
+      }
+    };
+
+    init();
+  }, [checkMetaMaskInstallation, initProvider]);
 
   return {
-    // Account state
-    accountAddress,
-    shortAddress,
+    // Connection state
     isConnected,
     isConnecting,
     isReconnecting,
+    isMetaMaskInstalled,
     
-    // Balances
+    // Account and balance info
+    accountAddress,
+    currentAccount,
+    accounts,
+    balance,
     balanceETH,
     balanceFVT,
     formattedBalanceETH,
-    formattedBalanceFVT,
     
     // Network info
     chainId,
     isCorrectNetwork,
     networkName,
     
-    // Contract info
-    tokenAddress,
+    // Actions
+    connectWallet,
+    connect,
+    disconnect,
+    disconnectWallet,
+    reconnectWallet,
+    switchAccount,
+    switchToHardhatNetwork,
+    
+    // Balance management
+    refreshBalance,
+    refreshBalances,
+    refreshAllBalances,
+    getBalance,
     
     // Error handling
     error,
-    
-    // Installation check
-    isMetaMaskInstalled,
-    
-    // Actions
-    connectWallet,
-    disconnectWallet,
-    reconnectWallet,
-    switchToHardhatNetwork,
-    refreshBalances,
     clearError,
+    
+    // Provider
+    provider,
+    
+    // Token info
+    tokenAddress
   };
-};
+}

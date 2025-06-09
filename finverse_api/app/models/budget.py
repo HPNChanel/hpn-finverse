@@ -7,9 +7,34 @@ from datetime import datetime, date
 from sqlalchemy import Column, BigInteger, String, DateTime, Date, ForeignKey, Boolean, Enum as SQLEnum, Text, DECIMAL, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property 
+from enum import Enum
 
 from app.db.session import Base
-from app.schemas.budget import BudgetPeriod, BudgetStatus, AlertThreshold
+
+
+class BudgetPeriod(str, Enum):
+    """Budget period types"""
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    YEARLY = "yearly"
+    CUSTOM = "custom"
+
+
+class BudgetStatus(str, Enum):
+    """Budget status types"""
+    ACTIVE = "active"
+    EXCEEDED = "exceeded"
+    COMPLETED = "completed"
+    PAUSED = "paused"
+
+
+class AlertThreshold(str, Enum):
+    """Alert threshold types"""
+    PERCENT_50 = "50%"
+    PERCENT_75 = "75%"
+    PERCENT_90 = "90%"
+    PERCENT_100 = "100%"
 
 
 class Budget(Base):

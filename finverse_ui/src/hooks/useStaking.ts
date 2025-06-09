@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ethers } from 'ethers';
+import { BrowserProvider, Contract, formatEther, parseEther } from 'ethers';
 import { useWallet } from './useWallet';
 import { useToast } from '@/hooks/use-toast';
 import { ErrorHandler } from '@/utils/errorHandler';
 import { ERC20_ABI, STAKE_VAULT_ABI } from '@/lib/contracts';
+import { getStakeVaultAddress } from '@/utils/contractLoader';
+import { extractErrorMessage } from '@/utils/errorHelpers';
 
 interface StakeInfo {
   amount: string;
@@ -64,6 +66,7 @@ export const useStaking = (): UseStakingReturn => {
   const [error, setError] = useState<string | null>(null);
   const [stakeInfo, setStakeInfo] = useState<StakeInfo | null>(null);
   const [totalStaked, setTotalStaked] = useState('0');
+  const [stakeVaultAddress, setStakeVaultAddress] = useState(import.meta.env?.VITE_STAKE_VAULT_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512');
 
   // Contract instances
   const [tokenContract, setTokenContract] = useState<ethers.Contract | null>(null);
@@ -71,21 +74,26 @@ export const useStaking = (): UseStakingReturn => {
 
   const { toast } = useToast();
 
-  // Contract addresses (fallback values)
-  const STAKE_VAULT_ADDRESS = import.meta.env?.VITE_STAKE_VAULT_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
+  useEffect(() => {
+    getStakeVaultAddress().then(address => {
+      setStakeVaultAddress(address);
+    }).catch(() => {
+      console.warn('Using fallback stake vault address');
+    });
+  }, []);
 
-  // Initialize contracts when wallet is connected
+  // Initialize contracts when wallet is connected using ethers v6
   useEffect(() => {
     const initializeContracts = async () => {
       if (!window.ethereum || !accountAddress || !tokenAddress || !isCorrectNetwork) return;
 
       try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
+        const provider = new BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
 
-        // Create contract instances with correct ABIs
-        const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-        const vault = new ethers.Contract(STAKE_VAULT_ADDRESS, STAKE_VAULT_ABI, signer);
+        // Create contract instances with dynamic addresses
+        const token = new Contract(tokenAddress, ERC20_ABI, signer);
+        const vault = new Contract(stakeVaultAddress, STAKE_VAULT_ABI, signer);
 
         setTokenContract(token);
         setStakeVaultContract(vault);
@@ -97,7 +105,7 @@ export const useStaking = (): UseStakingReturn => {
     };
 
     initializeContracts();
-  }, [accountAddress, tokenAddress, isCorrectNetwork]);
+  }, [accountAddress, tokenAddress, isCorrectNetwork, stakeVaultAddress]);
 
   // Network check effect
   useEffect(() => {
@@ -113,7 +121,7 @@ export const useStaking = (): UseStakingReturn => {
     }
   }, [isConnected, isCorrectNetwork, toast]);
 
-  // Stake tokens with improved error handling
+  // Stake tokens with improved error handling using ethers v6
   const stake = useCallback(async (amount: string) => {
     if (!tokenContract || !stakeVaultContract || !accountAddress) {
       setError('Contracts not initialized or wallet not connected');
@@ -142,27 +150,48 @@ export const useStaking = (): UseStakingReturn => {
     setError(null);
 
     try {
-      const amountWei = ethers.parseEther(amount);
+      const amountWei = parseEther(amount);
       
-      // Check balance
+      // Check balance first
+      console.log('Checking user balance...');
       const balance = await tokenContract.balanceOf(accountAddress);
       if (balance < amountWei) {
         throw new Error('Insufficient token balance');
       }
+      console.log(`User balance: ${formatEther(balance)} FVT`);
 
-      // First, approve the StakeVault to spend tokens
-      console.log('Approving tokens...');
-      const approveTx = await tokenContract.approve(STAKE_VAULT_ADDRESS, amountWei);
-      await approveTx.wait();
+      // Check current allowance
+      console.log('Checking token allowance...');
+      const currentAllowance = await tokenContract.allowance(accountAddress, STAKE_VAULT_ADDRESS);
+      console.log(`Current allowance: ${formatEther(currentAllowance)} FVT`);
+
+      // Approve tokens if needed
+      if (currentAllowance < amountWei) {
+        console.log('Approving tokens...');
+        const approveTx = await tokenContract.approve(STAKE_VAULT_ADDRESS, amountWei);
+        
+        toast({
+          title: "Approval Transaction Sent",
+          description: "Please wait for approval confirmation...",
+        });
+        
+        await approveTx.wait();
+        
+        toast({
+          title: "Approval Successful",
+          description: "Tokens approved for staking. Now executing stake...",
+        });
+      }
       
-      toast({
-        title: "Approval Successful",
-        description: "Tokens approved for staking. Now executing stake...",
-      });
-      
-      // Then stake the tokens
+      // Execute stake transaction
       console.log('Staking tokens...');
       const stakeTx = await stakeVaultContract.stake(amountWei);
+      
+      toast({
+        title: "Stake Transaction Sent",
+        description: "Please wait for confirmation...",
+      });
+      
       await stakeTx.wait();
       
       console.log('Staking successful!');
@@ -175,6 +204,16 @@ export const useStaking = (): UseStakingReturn => {
       await refreshData();
     } catch (err: any) {
       console.error('Staking failed:', err);
+      
+      // Enhanced error logging for debugging
+      console.error('Error details:', {
+        code: err.code,
+        reason: err.reason,
+        message: err.message,
+        data: err.data,
+        transaction: err.transaction
+      });
+      
       const errorMessage = ErrorHandler.handleStakingError(err, 'stake');
       setError(errorMessage);
       
@@ -286,7 +325,7 @@ export const useStaking = (): UseStakingReturn => {
     }
   }, [stakeVaultContract, accountAddress, isCorrectNetwork, toast]);
 
-  // Get stake information
+  // Get stake information using ethers v5
   const getStakeInfo = useCallback(async () => {
     if (!stakeVaultContract || !accountAddress) return;
 
@@ -294,17 +333,17 @@ export const useStaking = (): UseStakingReturn => {
       // Get user's stake count
       const stakeCount = await stakeVaultContract.getUserStakeCount(accountAddress);
       
-      if (stakeCount > 0) {
+      if (stakeCount.gt(0)) {
         // Get first stake (index 0)
         const stake = await stakeVaultContract.getUserStake(accountAddress, 0);
         const pendingReward = await stakeVaultContract.getPendingReward(accountAddress, 0);
         const canUnstake = await stakeVaultContract.canUnstake(accountAddress, 0);
         
         setStakeInfo({
-          amount: ethers.formatEther(stake.amount),
-          timestamp: Number(stake.timestamp),
+          amount: ethers.utils.formatEther(stake.amount),
+          timestamp: stake.timestamp.toNumber(),
           claimed: stake.claimed,
-          reward: ethers.formatEther(pendingReward),
+          reward: ethers.utils.formatEther(pendingReward),
           canUnstake
         });
       } else {
@@ -312,25 +351,30 @@ export const useStaking = (): UseStakingReturn => {
       }
     } catch (err) {
       console.error('Failed to get stake info:', err);
+      const errorMessage = extractErrorMessage(err);
+      setError(errorMessage);
       ErrorHandler.logError(err as Error, 'Get stake info');
     }
   }, [stakeVaultContract, accountAddress]);
 
-  // Refresh all data
+  // Refresh all data using ethers v6
   const refreshData = useCallback(async () => {
     if (!stakeVaultContract || !accountAddress) return;
 
     try {
       setIsLoading(true);
+      clearError();
       
       // Get total staked
       const staked = await stakeVaultContract.totalStaked(accountAddress);
-      setTotalStaked(ethers.formatEther(staked));
+      setTotalStaked(formatEther(staked));
 
       // Get stake info
       await getStakeInfo();
     } catch (err) {
       console.error('Failed to refresh data:', err);
+      const errorMessage = extractErrorMessage(err);
+      setError(errorMessage);
       ErrorHandler.logError(err as Error, 'Refresh staking data');
     } finally {
       setIsLoading(false);
@@ -340,7 +384,9 @@ export const useStaking = (): UseStakingReturn => {
   // Auto-refresh data when contracts are ready
   useEffect(() => {
     if (isConnected && tokenContract && stakeVaultContract && isCorrectNetwork) {
-      refreshData();
+      refreshData().catch((error) => {
+        console.error('Auto-refresh failed:', extractErrorMessage(error));
+      });
     }
   }, [isConnected, tokenContract, stakeVaultContract, isCorrectNetwork, refreshData]);
 

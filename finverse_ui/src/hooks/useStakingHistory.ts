@@ -1,10 +1,68 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ethers } from 'ethers';
+import { BrowserProvider, Contract } from 'ethers';
 import { useWallet } from './useWallet';
 import { useToast } from '@/hooks/use-toast';
 import { ErrorHandler } from '@/utils/errorHandler';
-import { getStakeVaultContract, formatTokenAmount } from '@/lib/contracts';
-import { stakingService } from '@/services/stakingService';
+import { getStakeVaultContract, formatTokenAmount, loadUserStakesFromContract, ContractStakingSummary } from '@/lib/contracts';
+
+// Import types with fallback
+interface StakeProfile {
+  stake: {
+    id: string | number;
+    user_id: number;
+    name: string;
+    amount: number;
+    balance: number;
+    created_at: string;
+    updated_at: string;
+    is_active: boolean;
+    tx_hash?: string;
+    pool_id: string;
+    staked_at: string;
+    lock_period: number;
+    reward_rate: number;
+    apy_snapshot: number;
+    claimable_rewards: number;
+    rewards_earned: number;
+    unlock_at: string;
+    status: string;
+  };
+  rewards: {
+    apy: number;
+    earned: number;
+    duration_days: number;
+  };
+  isOverdue: boolean;
+}
+
+interface StakingEvent {
+  type: 'Staked' | 'Unstaked' | 'RewardClaimed';
+  stakeId: number;
+  amount: string;
+  timestamp: Date;
+  transactionHash: string;
+  blockNumber: number;
+}
+
+interface StakedEventData {
+  user: string;
+  amount: string;
+  timestamp: number;
+  stakeIndex: number;
+  txHash: string;
+  poolId?: string;
+  lockPeriod?: number;
+}
+
+// Try to import stakingService with fallback
+let stakingService: any = null;
+try {
+  // Dynamic import to handle missing service gracefully
+  const serviceModule = await import('@/services/stakingService');
+  stakingService = serviceModule.stakingService || serviceModule.default;
+} catch (error) {
+  console.warn('StakingService not available, using contract-only mode');
+}
 
 interface UseStakingHistoryReturn {
   stakingHistory: StakeProfile[]; // Updated to use unified model
@@ -27,7 +85,7 @@ export const useStakingHistory = (): UseStakingHistoryReturn => {
   const { toast } = useToast();
   const eventListenersRef = useRef<any[]>([]);
 
-  // Enhanced data fetching with contract-first approach
+  // Enhanced data fetching with database-first approach
   const fetchStakingHistory = useCallback(async () => {
     if (!isConnected || !accountAddress) return;
 
@@ -35,9 +93,74 @@ export const useStakingHistory = (): UseStakingHistoryReturn => {
       setIsLoading(true);
       setError(null);
       
-      // Primary: Load directly from smart contract
+      // Primary: Load from database first (only if service is available)
+      if (stakingService) {
+        console.log('🗄️ Loading staking history from database...');
+        try {
+          const dbResponse = await fetch('/api/v1/staking/user-stakes', {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+            },
+          });
+          
+          if (dbResponse.ok) {
+            const dbData = await dbResponse.json();
+            
+            if (dbData.positions && dbData.positions.length > 0) {
+              // Transform database positions to history format
+              const historyFromDb = dbData.positions.map((position: any) => ({
+                stake: {
+                  id: position.id,
+                  user_id: position.userId,
+                  name: `Stake #${position.id}`,
+                  amount: position.amount,
+                  balance: position.amount,
+                  created_at: position.createdAt,
+                  updated_at: position.updatedAt,
+                  is_active: position.isActive,
+                  tx_hash: position.txHash,
+                  pool_id: position.poolId,
+                  staked_at: position.stakedAt,
+                  lock_period: position.lockPeriod,
+                  reward_rate: position.rewardRate,
+                  apy_snapshot: position.apySnapshot || position.rewardRate,
+                  claimable_rewards: position.claimableRewards,
+                  rewards_earned: position.rewardsEarned,
+                  unlock_at: position.unlockDate,
+                  status: position.status
+                },
+                rewards: {
+                  apy: position.rewardRate,
+                  earned: position.rewardsEarned,
+                  duration_days: position.lockPeriod
+                },
+                isOverdue: position.isUnlocked && position.isActive
+              }));
+
+              console.log(`✅ Loaded ${historyFromDb.length} stakes from database`);
+              setStakingHistory(historyFromDb);
+              setIsLoading(false);
+              return;
+            }
+          }
+        } catch (dbError) {
+          console.warn('Database fetch failed, falling back to contract:', dbError);
+        }
+      }
+      
+      // Fallback: Load from smart contract
       console.log('🔗 Loading staking history from smart contract...');
-      const contractSummary = await loadUserStakesFromContract(accountAddress);
+      
+      let contractSummary: ContractStakingSummary;
+      try {
+        contractSummary = await loadUserStakesFromContract(accountAddress);
+      } catch (error) {
+        console.error('Failed to load from contract:', error);
+        // Return empty history instead of crashing
+        setStakingHistory([]);
+        setIsLoading(false);
+        return;
+      }
       
       // Transform contract positions to history format
       const historyFromContract = contractSummary.positions.map(position => ({
@@ -45,71 +168,32 @@ export const useStakingHistory = (): UseStakingHistoryReturn => {
           id: position.stakeIndex,
           user_id: 0, // Not relevant for contract data
           name: `Stake #${position.stakeIndex}`,
-          amount: parseFloat(position.amount),
-          balance: parseFloat(position.amount),
+          amount: parseFloat(position.amountFormatted), // Use formatted amount to avoid BigInt issues
+          balance: parseFloat(position.amountFormatted),
           created_at: position.startDate.toISOString(),
           updated_at: position.startDate.toISOString(),
-          is_active: !position.claimed && parseFloat(position.amount) > 0,
+          is_active: !position.claimed && parseFloat(position.amountFormatted) > 0,
           tx_hash: null,
           pool_id: "contract-pool",
           staked_at: position.startDate.toISOString(),
           lock_period: position.lockPeriodDays,
           reward_rate: position.apy,
           apy_snapshot: position.apy,
-          claimable_rewards: position.claimed ? 0 : parseFloat(position.reward),
-          rewards_earned: parseFloat(position.reward),
+          claimable_rewards: position.claimed ? 0 : parseFloat(position.rewardFormatted),
+          rewards_earned: parseFloat(position.rewardFormatted),
           unlock_at: new Date(position.timestamp * 1000 + position.lockPeriod * 1000).toISOString(),
           status: position.claimed ? "COMPLETED" : "ACTIVE"
         },
         rewards: {
           apy: position.apy,
-          earned: parseFloat(position.reward),
+          earned: parseFloat(position.rewardFormatted),
           duration_days: Math.floor((Date.now() - position.startDate.getTime()) / (1000 * 60 * 60 * 24))
         },
         isOverdue: position.isUnlocked && !position.claimed
       }));
-      
-      setStakingHistory(historyFromContract);
-      console.log(`✅ Loaded ${historyFromContract.length} positions from contract`);
 
-      // Fallback: Try to enhance with API data if available
-      try {
-        console.log('📡 Attempting to enhance with API data...');
-        const apiResponse = await stakingService.getUserStakes(false);
-        
-        if (apiResponse?.positions?.length > 0) {
-          console.log(`📊 Found ${apiResponse.positions.length} positions in API`);
-          
-          // Merge contract data with API data by matching amounts and dates
-          const enhancedHistory = historyFromContract.map(contractItem => {
-            const apiMatch = apiResponse.positions.find(apiPos => 
-              Math.abs(apiPos.amount - contractItem.stake.amount) < 0.0001 &&
-              Math.abs(new Date(apiPos.staked_at).getTime() - contractItem.stake.created_at.getTime()) < 60000 // 1 minute tolerance
-            );
-            
-            if (apiMatch) {
-              return {
-                ...contractItem,
-                stake: {
-                  ...contractItem.stake,
-                  id: apiMatch.id,
-                  user_id: apiMatch.user_id,
-                  name: `Enhanced Stake #${apiMatch.id}`,
-                  tx_hash: apiMatch.tx_hash,
-                  pool_id: apiMatch.pool_id
-                }
-              };
-            }
-            
-            return contractItem;
-          });
-          
-          setStakingHistory(enhancedHistory);
-          console.log('✅ Enhanced contract data with API information');
-        }
-      } catch (apiError) {
-        console.warn('Could not enhance with API data, using pure contract data:', apiError);
-      }
+      setStakingHistory(historyFromContract);
+      console.log(`✅ Loaded ${historyFromContract.length} stakes from contract`);
 
     } catch (err: any) {
       console.error('Failed to fetch staking history:', err);
@@ -134,7 +218,7 @@ export const useStakingHistory = (): UseStakingHistoryReturn => {
     if (!accountAddress || !isConnected || !isCorrectNetwork || !window.ethereum) return;
 
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new BrowserProvider(window.ethereum);
       const contract = getStakeVaultContract(provider);
 
       // Get past events for the last 1000 blocks
@@ -216,7 +300,11 @@ export const useStakingHistory = (): UseStakingHistoryReturn => {
     }
 
     try {
-      await stakingService.claimRewards(stakeId);
+      if (stakingService) {
+        await stakingService.claimRewards(stakeId);
+      } else {
+        throw new Error('Staking service not available');
+      }
       
       toast({
         title: "Rewards Claimed",

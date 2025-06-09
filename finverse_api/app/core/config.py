@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     # Blockchain sync configuration
     WEB3_RPC_URL: str = "http://127.0.0.1:8545"
     WEB3_WS_URL: str = "ws://127.0.0.1:8545"
+    WEB3_WEBSOCKET_URL: str = "ws://127.0.0.1:8546"
     TOKEN_ADDRESS: str = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
     STAKE_VAULT_ADDRESS: str = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
     

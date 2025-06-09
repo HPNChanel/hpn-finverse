@@ -154,61 +154,35 @@ export interface RecentTransactionItem {
 class DashboardService {
   private baseUrl = '/dashboard';
 
-  async getDashboardOverview(): Promise<DashboardOverview> {
+  async getOverview(): Promise<any> {
     const response = await api.get(`${this.baseUrl}/overview`);
-    return response.data;
+    return response.data.data || response.data;
   }
 
   async getCategoryBreakdown(
     period: string = 'month',
-    transactionType: 'income' | 'expense' = 'expense'
-  ): Promise<CategoryBreakdown> {
+    transactionType: string = 'expense'
+  ): Promise<any> {
     const response = await api.get(`${this.baseUrl}/category-breakdown`, {
-      params: {
-        period,
-        transaction_type: transactionType
-      }
+      params: { period, transaction_type: transactionType }
     });
-    return response.data;
+    return response.data.data || response.data;
   }
 
-  async getCashflowTrends(
+  async getTrends(
     period: string = 'month',
     months: number = 12
-  ): Promise<CashflowTrends> {
+  ): Promise<any> {
     const response = await api.get(`${this.baseUrl}/trends`, {
-      params: {
-        period,
-        months
-      }
+      params: { period, months }
     });
-    return response.data;
+    return response.data.data || response.data;
   }
 
-  async getFinancialSummary(): Promise<FinancialSummary> {
-    const response = await api.get(`${this.baseUrl}/financial-summary`);
-    return response.data;
-  }
-
-  async getRecentActivity(limit: number = 10): Promise<RecentActivity> {
+  async getRecentActivity(limit: number = 10): Promise<any> {
     const response = await api.get(`${this.baseUrl}/recent-activity`, {
       params: { limit }
     });
-    return response.data;
-  }
-
-  async getQuickStats(): Promise<any> {
-    const response = await api.get(`${this.baseUrl}/quick-stats`);
-    return response.data.data || response.data;
-  }
-
-  async getActiveBudgets(): Promise<any> {
-    const response = await api.get('/budgets/summary/stats');
-    return response.data.data || response.data;
-  }
-
-  async getBudgetHealth(): Promise<any> {
-    const response = await api.get(`${this.baseUrl}/budget-health`);
     return response.data.data || response.data;
   }
 

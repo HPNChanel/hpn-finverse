@@ -23,6 +23,7 @@ from .financial_goal import FinancialGoal
 from .category import Category
 from .budget import Budget, BudgetAlert
 from .stake import Stake  # Only unified Stake model
+from .staking_log import StakingLog  # Staking event logs
 
 # Export all models for easy importing
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     'Budget',
     'BudgetAlert',
     'Stake',  # Only unified Stake model
+    'StakingLog',  # Staking event logs
 ]
 
 # Model relationship summary for clean architecture

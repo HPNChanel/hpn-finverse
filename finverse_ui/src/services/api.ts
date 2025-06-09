@@ -2,11 +2,11 @@ import axios, { AxiosError, AxiosResponse } from 'axios';
 
 // Environment validation and logging
 const getApiBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL;
+  const envUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
   const fallbackUrl = 'http://localhost:8000/api/v1';
   
   if (!envUrl) {
-    console.warn('⚠️ VITE_API_URL not defined, using fallback:', fallbackUrl);
+    console.warn('⚠️ VITE_API_BASE_URL not defined, using fallback:', fallbackUrl);
     return fallbackUrl;
   }
   
@@ -29,7 +29,7 @@ export const apiClient = axios.create({
   // Add retry configuration
   retry: 3,
   retryDelay: (retryCount) => {
-    return retryCount * 1000; // 1s, 2s, 3s delays
+    return Math.pow(2, retryCount) * 1000; // Exponential backoff
   },
 });
 

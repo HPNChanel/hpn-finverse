@@ -34,7 +34,8 @@ export const useStakingEvents = (): UseStakingEventsReturn => {
           duration: eventData.lockPeriod || 0,
           tx_hash: eventData.txHash,
           pool_id: eventData.poolId || 'default-pool',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          wallet_address: accountAddress // Add explicit wallet address
         };
 
         console.log('📡 Syncing stake to backend:', syncData);
@@ -43,6 +44,13 @@ export const useStakingEvents = (): UseStakingEventsReturn => {
         await stakingApi.syncStakeEvent(syncData);
         
         console.log('✅ Successfully synced stake to backend');
+
+        // Trigger data refresh after successful sync
+        if (typeof window !== 'undefined' && window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('stakingDataRefresh', {
+            detail: { txHash: eventData.txHash, stakeIndex: eventData.stakeIndex }
+          }));
+        }
         
       } catch (error) {
         console.error('❌ Failed to sync stake to backend:', error);

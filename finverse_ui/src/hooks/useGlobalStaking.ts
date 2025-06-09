@@ -1,5 +1,6 @@
+import { getStakeVaultAddress } from '@/utils/contractLoader';
 import { useState, useCallback, useEffect } from 'react';
-import { ethers } from 'ethers';
+import { BrowserProvider, Contract, formatEther } from 'ethers';
 import { useWallet } from './useWallet';
 
 const STAKE_VAULT_ABI = [
@@ -28,10 +29,17 @@ export const useGlobalStaking = (): UseGlobalStakingReturn => {
   const [stats, setStats] = useState<GlobalStakingStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stakeVaultAddress, setStakeVaultAddress] = useState(import.meta.env?.VITE_STAKE_VAULT_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512');
 
   const { isCorrectNetwork } = useWallet();
 
-  const STAKE_VAULT_ADDRESS = import.meta.env?.VITE_STAKE_VAULT_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512';
+  useEffect(() => {
+    getStakeVaultAddress().then(address => {
+      setStakeVaultAddress(address);
+    }).catch(() => {
+      console.warn('Using fallback stake vault address');
+    });
+  }, []);
 
   const fetchGlobalStats = useCallback(async () => {
     if (!isCorrectNetwork || !window.ethereum) return;
@@ -40,8 +48,8 @@ export const useGlobalStaking = (): UseGlobalStakingReturn => {
       setIsLoading(true);
       setError(null);
 
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(STAKE_VAULT_ADDRESS, STAKE_VAULT_ABI, provider);
+      const provider = new BrowserProvider(window.ethereum);
+      const contract = new Contract(stakeVaultAddress, STAKE_VAULT_ABI, provider);
 
       // Fetch data from contract
       const [totalStakedAmount, apyPercentage, lockPeriod] = await Promise.all([
@@ -50,7 +58,7 @@ export const useGlobalStaking = (): UseGlobalStakingReturn => {
         contract.LOCK_PERIOD()
       ]);
 
-      const totalStakedFormatted = ethers.formatEther(totalStakedAmount);
+      const totalStakedFormatted = formatEther(totalStakedAmount);
       const apy = Number(apyPercentage);
       const lockDays = Number(lockPeriod) / (24 * 60 * 60);
 
@@ -75,17 +83,29 @@ export const useGlobalStaking = (): UseGlobalStakingReturn => {
     } finally {
       setIsLoading(false);
     }
-  }, [isCorrectNetwork, STAKE_VAULT_ADDRESS]);
+  }, [isCorrectNetwork, stakeVaultAddress]);
 
   const refreshStats = useCallback(async () => {
     await fetchGlobalStats();
   }, [fetchGlobalStats]);
 
-  // Auto-refresh every 30 seconds
+  // Initial fetch and visibility-based refresh instead of aggressive polling
   useEffect(() => {
     fetchGlobalStats();
-    const interval = setInterval(fetchGlobalStats, 30000);
-    return () => clearInterval(interval);
+    
+    const handleVisibilityChange = () => {
+      // Only refresh when user returns to the tab
+      if (!document.hidden && stats) {
+        console.log('🔄 Refreshing global staking stats after user returned to tab');
+        fetchGlobalStats();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [fetchGlobalStats]);
 
   return {

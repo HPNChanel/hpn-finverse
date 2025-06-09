@@ -17,23 +17,39 @@ export const isTimeoutError = (error: any): boolean => {
  * Extract error message from various error formats
  */
 export const extractErrorMessage = (error: any): string => {
-  if (typeof error === 'string') {
-    return error;
-  }
-  
-  if (error?.response?.data?.detail) {
-    return error.response.data.detail;
-  }
-  
-  if (error?.response?.data?.message) {
-    return error.response.data.message;
-  }
-  
-  if (error?.message) {
+  // Handle null/undefined
+  if (!error) return 'An unknown error occurred';
+
+  // Handle string errors
+  if (typeof error === 'string') return error;
+
+  // Handle Error objects with message
+  if (error.message) {
+    // Check for common blockchain errors
+    if (error.message.includes('user rejected')) {
+      return 'Transaction rejected by user';
+    }
+    if (error.message.includes('insufficient funds')) {
+      return 'Insufficient funds for transaction';
+    }
+    if (error.message.includes('network')) {
+      return 'Network connection error';
+    }
     return error.message;
   }
-  
-  return 'An unexpected error occurred';
+
+  // Handle objects with error properties
+  if (error.error && typeof error.error === 'string') {
+    return error.error;
+  }
+
+  // Handle response errors
+  if (error.response?.data?.message) {
+    return error.response.data.message;
+  }
+
+  // Fallback for any unhandled cases
+  return 'An unknown error occurred';
 };
 
 /**
@@ -60,28 +76,14 @@ export const isAuthError = (error: any): boolean => {
  * Format error for display in UI components
  */
 export const formatErrorForDisplay = (error: any): { title: string; message: string } => {
-  const message = extractErrorMessage(error);
-  
-  if (isAuthError(error)) {
-    return {
-      title: 'Authentication Error',
-      message: 'Please log in again to continue.'
-    };
-  }
-  
-  if (isNetworkError(error)) {
-    return {
-      title: 'Connection Error',
-      message: 'Unable to connect to the server. Please check your internet connection.'
-    };
-  }
-  
   if (isTimeoutError(error)) {
     return {
       title: 'Request Timeout',
       message: 'The request took too long to complete. Please try again.'
     };
   }
+  
+  const message = extractErrorMessage(error);
   
   return {
     title: 'Error',

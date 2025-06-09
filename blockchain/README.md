@@ -5,9 +5,35 @@ This project demonstrates a DeFi staking platform built with Hardhat. It include
 ## Features
 
 - **MockERC20 Token**: FinVerse Token (FVT) with minting capabilities
-- **StakeVault Contract**: Staking with 10% APY and 30-day lock period
-- **Comprehensive Tests**: Full test coverage for all functionality
+- **Multi-Pool StakeVault**: Support for both ETH and ERC20 token staking pools
+- **Pool-Based Staking**: Different APY rates and requirements per pool
+- **Comprehensive Tests**: Full test coverage including multi-pool functionality
 - **Deployment Scripts**: Automated deployment with environment file generation
+
+## Pool Types
+
+### ETH Pools (automatically created)
+- **ETH Flexible Pool**: 8% APY, 1-1000 ETH stake range
+- **ETH Premium Pool**: 12% APY, 5-5000 ETH stake range
+
+### ERC20 Pools (created via deployment)
+- **FVT Standard Pool**: 12% APY, 1-10,000 FVT stake range
+- Custom pools can be created by contract owner
+
+## Staking Usage
+
+### ETH Staking
+```javascript
+// Stake 1 ETH to pool 0 (ETH Flexible)
+await stakeVault.stake(ethers.parseEther("1"), 0, { value: ethers.parseEther("1") });
+```
+
+### ERC20 Staking
+```javascript
+// Approve and stake 100 FVT to pool 2
+await token.approve(stakeVault.target, ethers.parseEther("100"));
+await stakeVault.stake(ethers.parseEther("100"), 2);
+```
 
 ## Configuration
 

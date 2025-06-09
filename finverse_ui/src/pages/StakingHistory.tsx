@@ -25,23 +25,213 @@ import {
   RefreshCw,
   Filter,
   LayoutGrid,
-  List
+  List,
+  DollarSign,
+  BarChart3,
+  Download
 } from 'lucide-react';
 import { useStakingAuth } from '@/hooks/useStakingAuth';
 import { useWallet } from '@/hooks/useWallet';
 import { useToast } from '@/hooks/use-toast';
+import { Skeleton } from '@/components/ui/skeleton';
 import { stakingService, StakeProfile } from '@/services/stakingService';
 import { cn } from '@/lib/utils';
 import { useStakingData } from '@/hooks/useStakingData';
+import { StakeHistoryTable } from '@/components/staking/StakeHistoryTable';
+import { StakeAnalyticsChart } from '@/components/staking/StakeAnalyticsChart';
+import { RewardTimeline } from '@/components/staking/RewardTimeline';
+import { StakingLogsHistory } from '@/components/staking/StakingLogsHistory';
 
 interface StakeHistoryItem extends StakeProfile {
   // Additional computed properties for display
   unlockDate: Date;
   isOverdue: boolean;
   progressPercentage: number;
+  // Add countdown-related properties
+  timeUntilUnlock: number; // in milliseconds
+  countdownDisplay: string;
+  lockProgressPercentage: number;
 }
 
-export function StakingHistory() {
+function StakingSummaryCards() {
+  const { tokenBalances, globalStats, isLoading } = useStakingData();
+  const { isConnected } = useWallet();
+
+  if (!isConnected) return null;
+
+  const formatFVT = (amount: string | number) => {
+    const value = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (value >= 1000000) return `${(value / 1000000).toFixed(2)}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(2)}K`;
+    return value.toFixed(4);
+  };
+
+  const cards = [
+    {
+      title: "Total Staked",
+      value: formatFVT(tokenBalances?.stakedBalance || '0'),
+      suffix: "ETH",
+      description: "Your total staked amount",
+      icon: DollarSign,
+      color: "text-blue-600",
+      bgColor: "bg-blue-50"
+    },
+    {
+      title: "Active Stakes",
+      value: "3", // This would come from your data
+      suffix: "",
+      description: "Currently running stakes",
+      icon: BarChart3,
+      color: "text-green-600",
+      bgColor: "bg-green-50"
+    },
+    {
+      title: "Total Rewards",
+      value: formatFVT(500), // This would come from your reward calculations
+      suffix: "ETH",
+      description: "Lifetime rewards earned",
+      icon: TrendingUp,
+      color: "text-purple-600",
+      bgColor: "bg-purple-50"
+    },
+    {
+      title: "Average APY",
+      value: globalStats?.apy || 0,
+      suffix: "%",
+      description: "Weighted average return",
+      icon: Calendar,
+      color: "text-orange-600",
+      bgColor: "bg-orange-50"
+    }
+  ];
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {cards.map((card, index) => (
+        <Card key={index} className="relative overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {card.title}
+            </CardTitle>
+            <div className={`p-2 rounded-full ${card.bgColor}`}>
+              <card.icon className={`h-4 w-4 ${card.color}`} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {card.value} {card.suffix}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {card.description}
+            </p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function QuickActions() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          Quick Actions
+          <Badge variant="outline">Pro Tools</Badge>
+        </CardTitle>
+        <CardDescription>
+          Manage your staking data and analysis
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Button variant="outline" className="h-16 flex-col gap-2">
+            <Download className="w-5 h-5" />
+            <span>Export History</span>
+          </Button>
+          <Button variant="outline" className="h-16 flex-col gap-2">
+            <TrendingUp className="w-5 h-5" />
+            <span>Performance Report</span>
+          </Button>
+          <Button variant="outline" className="h-16 flex-col gap-2">
+            <Filter className="w-5 h-5" />
+            <span>Advanced Filter</span>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RewardGrowthChart() {
+  // This component would show reward growth over time
+  // Using mock data for demonstration
+  const mockRewardData = [
+    { date: '2024-01-01', rewards: 0 },
+    { date: '2024-01-15', rewards: 25.50 },
+    { date: '2024-02-01', rewards: 78.25 },
+    { date: '2024-02-15', rewards: 142.80 },
+    { date: '2024-03-01', rewards: 225.45 },
+    { date: '2024-03-15', rewards: 334.70 },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5" />
+          Reward Growth Timeline
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {mockRewardData.map((item, index) => (
+            <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+              <div>
+                <p className="font-medium">{new Date(item.date).toLocaleDateString()}</p>
+                <p className="text-sm text-muted-foreground">Rewards checkpoint</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-green-600">+{item.rewards.toFixed(2)} ETH</p>
+                <p className="text-xs text-muted-foreground">
+                  {index > 0 ? `+${(item.rewards - mockRewardData[index-1].rewards).toFixed(2)}` : 'Initial'}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Add skeleton component if not available
+const BalanceSkeleton = () => (
+  <div className="animate-pulse space-y-2">
+    <Skeleton className="h-4 w-24" />
+    <Skeleton className="h-6 w-32" />
+  </div>
+);
+
+// Add in the component where balances are displayed
+const BalanceDisplay = ({ balance, label, isLoading }: { 
+  balance: string | undefined; 
+  label: string; 
+  isLoading?: boolean;
+}) => {
+  if (isLoading) {
+    return <BalanceSkeleton />;
+  }
+  
+  return (
+    <div className="space-y-1">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="text-2xl font-bold">{balance || '0.0000'}</p>
+    </div>
+  );
+};
+
+export default function StakingHistory() {
   const { 
     contractSummary, 
     stakes, // Now contains contract positions
@@ -114,7 +304,7 @@ export function StakingHistory() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-6">
+      <div className="container mx-auto py-6 overflow-visible">
         <h1 className="text-3xl font-bold mb-6">Staking History</h1>
         <Card>
           <CardContent className="text-center py-8">
@@ -128,7 +318,7 @@ export function StakingHistory() {
 
   if (error) {
     return (
-      <div className="container mx-auto py-6">
+      <div className="container mx-auto py-6 overflow-visible">
         <h1 className="text-3xl font-bold mb-6">Staking History</h1>
         <Alert variant="destructive">
           <AlertDescription>
@@ -142,105 +332,73 @@ export function StakingHistory() {
     );
   }
 
-  return (
-    <div className="container mx-auto py-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Staking History</h1>
-        <div className="flex gap-2">
-          <Button onClick={fetchStakingHistory} variant="outline" size="sm">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
+  if (!isConnected) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-10">
+          <Card className="text-center">
+            <CardContent className="pt-12 pb-12">
+              <Clock className="w-16 h-16 text-muted-foreground mx-auto mb-6" />
+              <h2 className="text-2xl font-bold mb-4">Connect to View History</h2>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Connect your wallet to view your complete staking history and track your rewards.
+              </p>
+              <Button onClick={() => window.location.href = '/staking/login'} size="lg">
+                Access Staking Platform
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
+    );
+  }
 
-      {/* Summary Card */}
-      {contractSummary && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Portfolio Summary</CardTitle>
-            <CardDescription>Loaded directly from blockchain</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Staked</p>
-                <p className="text-2xl font-bold">{contractSummary.totalStakedFormatted} FVT</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Rewards</p>
-                <p className="text-2xl font-bold text-green-600">{contractSummary.totalRewardsFormatted} FVT</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Claimable</p>
-                <p className="text-2xl font-bold text-orange-600">{contractSummary.totalClaimableFormatted} FVT</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Positions</p>
-                <p className="text-2xl font-bold">{contractSummary.stakeCount}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-10">
+        <div className="space-y-8">
+          {/* Header - Single instance */}
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Staking History</h1>
+            <p className="text-muted-foreground">
+              Track your staking performance and manage your positions
+            </p>
+          </div>
 
-      {/* Display filtered data */}
-      {(!contractSummary || contractSummary.stakeCount === 0) ? (
-        <Card>
-          <CardContent className="text-center py-8">
-            <p className="text-muted-foreground">No staking positions found on blockchain</p>
-            <p className="text-sm mt-2">Connect your wallet and stake tokens to see your history</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {filteredData.map((item) => (
-                <div key={`contract-${item.stake.id}`} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-start">
-                    <div className="space-y-1">
-                      <h3 className="font-medium">{item.stake.name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Amount: {formatCurrency(item.stake.amount)} FVT
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        APY: {item.rewards.apy}%
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Duration: {item.rewards.duration_days} days
-                      </p>
-                    </div>
-                    
-                    <div className="text-right space-y-2">
-                      <div>
-                        <p className="text-sm font-medium">
-                          Rewards: {formatCurrency(item.rewards.earned)} FVT
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Claimable: {formatCurrency(item.stake.claimable_rewards)} FVT
-                        </p>
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <Badge variant={item.stake.is_active ? "default" : "secondary"}>
-                          {item.stake.status}
-                        </Badge>
-                        
-                        {item.isOverdue && (
-                          <Badge variant="outline">
-                            Ready to claim
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+          {/* Summary Cards */}
+          <StakingSummaryCards />
+
+          {/* Quick Actions */}
+          <QuickActions />
+
+          {/* Main Content - Remove any duplicate layout wrappers */}
+          <Tabs defaultValue="overview" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="history">Transaction History</TabsTrigger>
+              <TabsTrigger value="rewards">Reward Timeline</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <StakeHistoryTable />
+                <RewardGrowthChart />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="history">
+              <div className="space-y-6">
+                <StakingLogsHistory />
+                <StakeHistoryTable />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="rewards">
+              <RewardGrowthChart />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
     </div>
   );
 }

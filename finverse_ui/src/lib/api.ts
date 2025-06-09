@@ -32,10 +32,10 @@ const api = axios.create({
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (value: string) => void;
-  reject: (error: any) => void;
+  reject: (error: unknown) => void;
 }> = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
     if (error) {
       reject(error);
@@ -75,7 +75,7 @@ api.interceptors.response.use(
     return response;
   },
   async (error: AxiosError) => {
-    const originalRequest = error.config as any;
+    const originalRequest = error.config as AxiosError['config'] & { _retry?: boolean };
 
     // Enhanced error logging for different scenarios
     if (error.code === 'ECONNABORTED') {
@@ -153,6 +153,13 @@ api.interceptors.response.use(
     // Enhanced error logging for different scenarios
     if (error.response?.status === 500) {
       console.error('💥 Server Error:', error.response?.data || error.message);
+    } else if (error.response?.status === 404) {
+      console.warn('🔍 Endpoint Not Found:', {
+        url: error.config?.url,
+        method: error.config?.method?.toUpperCase(),
+        message: 'This endpoint might not be implemented yet in the backend',
+        suggestion: 'Check if the API route exists or needs to be created'
+      });
     } else if (error.response?.status === 401) {
       console.warn('🔒 Unauthorized. Possible invalid/expired token.');
     } else if (error.code === 'ECONNABORTED') {
@@ -251,7 +258,7 @@ export const stakingApi = {
   },
 
   // Update staking position using unified model
-  updateStakingPosition: async (positionId: number, updateData: any) => {
+  updateStakingPosition: async (positionId: number, updateData: Record<string, unknown>) => {
     const response = await api.put(`/staking/positions/${positionId}`, updateData);
     return response.data;
   },
@@ -262,9 +269,21 @@ export const stakingApi = {
     return response.data;
   },
 
+  // Claim rewards for specific stake
+  claimStakeRewards: async (stakeId: string) => {
+    const response = await api.post(`/staking/rewards/claim/${stakeId}`);
+    return response.data;
+  },
+
   // Get claimable rewards
   getClaimableRewards: async () => {
     const response = await api.get('/staking/rewards/claimable');
+    return response.data;
+  },
+
+  // Get claimable rewards for specific stake
+  getStakeClaimableRewards: async (stakeId: string) => {
+    const response = await api.get(`/staking/rewards/claimable/${stakeId}`);
     return response.data;
   },
 
@@ -289,6 +308,181 @@ export const stakingApi = {
     });
     return response.data;
   },
+
+  // Get staking logs for analytics and history
+  getStakingLogs: async (limit: number = 50, offset: number = 0) => {
+    const response = await api.get(`/staking/logs?limit=${limit}&offset=${offset}`);
+    return response.data;
+  },
+
+  // Get staking analytics for charts and insights
+  getStakingAnalytics: async (timeframe: string = '30d') => {
+    const response = await api.get(`/staking/analytics?timeframe=${timeframe}`);
+    return response.data;
+  },
+
+  // Get staking dashboard overview
+  getStakingOverview: async () => {
+    const response = await api.get('/staking/overview');
+    return response.data;
+  },
+
+  // Get comprehensive staking dashboard data
+  getStakingDashboard: async () => {
+    const response = await api.get('/staking/dashboard');
+    return response.data;
+  }
+};
+
+// ETH Transfer API endpoints
+export const ethTransferApi = {
+  // Log ETH transfer to backend database
+  logEthTransfer: async (transferData: {
+    from_address: string;
+    to_address: string;
+    amount_eth: number;
+    tx_hash: string;
+    timestamp?: string;
+    gas_used?: string;
+    gas_price?: string;
+    notes?: string;
+  }) => {
+    const response = await api.post('/eth-transfer/log', {
+      from_address: transferData.from_address,
+      to_address: transferData.to_address,
+      amount_eth: transferData.amount_eth,
+      tx_hash: transferData.tx_hash,
+      timestamp: transferData.timestamp || new Date().toISOString(),
+      gas_used: transferData.gas_used,
+      gas_price: transferData.gas_price,
+      notes: transferData.notes || 'ETH transfer via FinVerse'
+    });
+    return response.data;
+  },
+
+  // Get ETH transfer history for specific address
+  getEthTransferHistory: async (address?: string, limit: number = 50, offset: number = 0) => {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    
+    if (address) {
+      params.append('address', address);
+    }
+    
+    const response = await api.get(`/eth-transfer/history?${params.toString()}`);
+    return response.data;
+  }
+};
+
+// Wallet API endpoints
+export const walletApi = {
+  // Log ETH transfer using wallet endpoint (matches requirements)
+  logEthTransfer: async (transferData: {
+    from_address: string;
+    to_address: string;
+    amount_eth: number;
+    tx_hash: string;
+    timestamp?: string;
+    gas_used?: string;
+    gas_price?: string;
+    notes?: string;
+  }) => {
+    const response = await api.post('/wallet/eth-transfer', {
+      from_address: transferData.from_address,
+      to_address: transferData.to_address,
+      amount_eth: transferData.amount_eth,
+      tx_hash: transferData.tx_hash,
+      timestamp: transferData.timestamp || new Date().toISOString(),
+      gas_used: transferData.gas_used,
+      gas_price: transferData.gas_price,
+      notes: transferData.notes || 'ETH transfer via FinVerse'
+    });
+    return response.data;
+  },
+
+  // Get ETH transfer history using wallet endpoint (matches requirements)
+  getEthHistory: async (
+    address?: string, 
+    limit: number = 50, 
+    offset: number = 0,
+    filters?: {
+      status?: string;
+      direction?: string;
+      fromDate?: string;
+      toDate?: string;
+    }
+  ) => {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    
+    if (address) {
+      params.append('address', address);
+    }
+    
+    if (filters?.status) {
+      params.append('status', filters.status);
+    }
+    
+    if (filters?.direction) {
+      params.append('direction', filters.direction);
+    }
+    
+    if (filters?.fromDate) {
+      params.append('from_date', filters.fromDate);
+    }
+    
+    if (filters?.toDate) {
+      params.append('to_date', filters.toDate);
+    }
+    
+    const response = await api.get(`/wallet/eth-history?${params.toString()}`);
+    return response.data;
+  },
+
+  // Log ETH transfer (legacy endpoint)
+  logTransfer: async (transferData: {
+    from_address: string;
+    to_address: string;
+    amount_eth: number;
+    tx_hash: string;
+    timestamp?: string;
+    gas_used?: string;
+    gas_price?: string;
+    status?: 'success' | 'failed';
+    notes?: string;
+  }) => {
+    const response = await api.post('/wallet/transfer-log', {
+      from_address: transferData.from_address,
+      to_address: transferData.to_address,
+      amount_eth: transferData.amount_eth,
+      tx_hash: transferData.tx_hash,
+      timestamp: transferData.timestamp || new Date().toISOString(),
+      gas_used: transferData.gas_used,
+      gas_price: transferData.gas_price,
+      status: transferData.status || 'success',
+      notes: transferData.notes || 'ETH transfer via FinVerse'
+    });
+    return response.data;
+  },
+
+  // Get transfer history (legacy endpoint)
+  getTransferHistory: async (address?: string, limit: number = 50, offset: number = 0) => {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    
+    if (address) {
+      params.append('address', address);
+    }
+    
+    const response = await api.get(`/wallet/transfer-history?${params.toString()}`);
+    return response.data;
+  }
 };
 
 // Also export as stakingService for backward compatibility

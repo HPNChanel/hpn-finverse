@@ -463,7 +463,8 @@ class FinancialAccountService(FinancialService[FinancialAccount, FinancialAccoun
     
     def _create_initial_transaction(self, db: Session, account: FinancialAccount, amount: Decimal):
         """Create initial transaction for account with proper Decimal handling"""
-        from app.models.transaction import Transaction
+        from app.models.transaction import Transaction, TransactionType
+        from app.models.category import Category
         from datetime import datetime
         
         try:
@@ -474,25 +475,55 @@ class FinancialAccountService(FinancialService[FinancialAccount, FinancialAccoun
             # CRITICAL: Verify account has an ID before creating transaction
             if not account.id:
                 raise ValueError("Account ID is required to create initial transaction")
+            
+            # Try to find or create "Opening Balance" category
+            category_id = None
+            try:
+                # Look for existing "Opening Balance" category
+                opening_balance_category = db.query(Category).filter(
+                    Category.user_id == account.user_id,
+                    Category.name == "Opening Balance",
+                    Category.is_active == True
+                ).first()
+                
+                # Create it if it doesn't exist
+                if not opening_balance_category:
+                    opening_balance_category = Category(
+                        user_id=account.user_id,
+                        name="Opening Balance",
+                        description="Initial deposits and opening balances",
+                        icon="💰",
+                        color="#10B981",
+                        type="income",
+                        is_system=True
+                    )
+                    db.add(opening_balance_category)
+                    db.flush()  # Get the ID
+                
+                category_id = opening_balance_category.id
+                
+            except Exception as e:
+                logger.warning(f"Could not create/find Opening Balance category: {str(e)}")
+                # Continue without category if it fails
                 
             initial_transaction = Transaction(
                 user_id=account.user_id,
                 financial_account_id=account.id,  # Use the flushed account ID
                 wallet_id=account.id,  # Backward compatibility
+                category_id=category_id,  # Add category if available
                 amount=amount,  # Use Decimal directly
-                transaction_type=1,  # Income
-                description=f"Initial balance for {account.name}",
+                transaction_type=TransactionType.INCOME.value,  # 🔥 CRITICAL FIX: Use INCOME (0) not EXPENSE (1)
+                description="Initial account creation",  # Better description as requested
                 transaction_date=datetime.now().date()
-                # Remove non-existent fields: is_recurring=False, is_internal=False
             )
             
             db.add(initial_transaction)
             # Don't commit here - let the parent method handle the commit
             
-            logger.info(f"Created initial transaction for account {account.id} with amount {amount}")
+            logger.info(f"✅ Created initial INCOME transaction for account {account.id} with amount {amount}")
             
         except Exception as e:
-            logger.error(f"Error creating initial transaction for account {account.id}: {str(e)}")
+            logger.error(f"❌ Error creating initial transaction for account {account.id}: {str(e)}")
             # Don't raise here as account creation should still succeed
             pass
 

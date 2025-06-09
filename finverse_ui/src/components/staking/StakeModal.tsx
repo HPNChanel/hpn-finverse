@@ -6,31 +6,10 @@ import { useWallet } from '@/hooks/useWallet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { accountService } from '@/services/accountService';
 import { formatCurrency } from '@/lib/utils';
+import { parseUnits, formatUnits } from 'ethers';
+import { useCountdown } from '@/hooks/useCountdown';
 
-interface StakeModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  pools: StakingPool[];
-  selectedPool?: StakingPool | null;
-  onStake: (poolId: number, amount: number, duration?: number, accountId?: number) => void;
-}
-
-interface FinancialAccount {
-  id: number;
-  name: string;
-  type: string;
-  balance: number;
-  icon?: string;
-  color?: string;
-}
-
-export function StakeModal({ 
-  isOpen, 
-  onClose, 
-  pools, 
-  selectedPool, 
-  onStake 
-}: StakeModalProps) {
+export function StakeModal({ isOpen, onClose, pools, selectedPool, onStake }: StakeModalProps) {
   const [amount, setAmount] = useState('');
   const [selectedPoolId, setSelectedPoolId] = useState<string>(''); // Changed to string for select compatibility
   const [selectedAccountId, setSelectedAccountId] = useState<string>(''); // Changed to string
@@ -39,6 +18,7 @@ export function StakeModal({
   const [error, setError] = useState('');
   const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [validationError, setValidationError] = useState<string>('');
   const { toast } = useToast();
   
   // Add wallet hook for balance display
@@ -96,88 +76,143 @@ export function StakeModal({
 
   const availableBalance = getAvailableBalance();
 
+  const validateAmountInput = (value: string): boolean => {
+    if (!value) {
+      setValidationError('');
+      return true;
+    }
+
+    const decimalPattern = /^\d*(\.\d{0,8})?$/;
+    if (!decimalPattern.test(value)) {
+      setValidationError('Invalid format. Use up to 8 decimal places.');
+      return false;
+    }
+
+    if (value.includes('e') || value.includes('E') || value.includes('+') || value.includes('-')) {
+      setValidationError('Scientific notation not allowed.');
+      return false;
+    }
+
+    if (value.length > 1 && value.startsWith('0') && !value.startsWith('0.')) {
+      setValidationError('Invalid number format.');
+      return false;
+    }
+
+    setValidationError('');
+    return true;
+  };
+
+  const handleAmountChange = (value: string) => {
+    if (validateAmountInput(value)) {
+      setAmount(value);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const stakeAmount = parseFloat(amount || '0');
-    if (!stakeAmount || stakeAmount <= 0) {
-      setError('Please enter a valid amount');
-      return;
-    }
-
-    if (!currentPool || !selectedPoolId) {
-      setError('Please select a pool');
-      return;
-    }
-
-    if (stakeAmount < currentPool.min_stake) {
-      setError(`Minimum stake amount is ${formatCurrency(currentPool.min_stake)}`);
-      return;
-    }
-
-    if (stakeAmount > currentPool.max_stake) {
-      setError(`Maximum stake amount is ${formatCurrency(currentPool.max_stake)}`);
-      return;
-    }
-
-    // Check account balance if account is selected
-    if (selectedAccount && stakeAmount > selectedAccount.balance) {
-      setError(`Insufficient balance in ${selectedAccount.name}. Available: ${formatCurrency(selectedAccount.balance)}`);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     try {
-      setIsSubmitting(true);
-      const poolIdNum = parseInt(selectedPoolId);
-      const accountIdNum = selectedAccountId ? parseInt(selectedAccountId) : undefined;
-      await onStake(poolIdNum, stakeAmount, duration, accountIdNum);
+      const amountWei = parseUnits(amount || '0', 18);
+      const stakeAmount = parseFloat(formatUnits(amountWei, 18));
       
-      // Reset form on success
-      setAmount('');
-      setError('');
-      setSelectedAccountId('');
-      toast({
-        title: "Stake Successful",
-        description: `Successfully staked ${formatCurrency(stakeAmount)} in ${currentPool.name}${
-          selectedAccount ? ` from ${selectedAccount.name}` : ''
-        }`,
-      });
-      onClose();
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || 'Failed to stake tokens';
-      setError(errorMessage);
-      toast({
-        title: "Staking Failed",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
+      if (!stakeAmount || stakeAmount <= 0) {
+        setError('Please enter a valid amount');
+        return;
+      }
+
+      if (!currentPool || !selectedPoolId) {
+        setError('Please select a pool');
+        return;
+      }
+
+      if (stakeAmount < currentPool.min_stake) {
+        setError(`Minimum stake amount is ${formatCurrency(currentPool.min_stake)}`);
+        return;
+      }
+
+      if (stakeAmount > currentPool.max_stake) {
+        setError(`Maximum stake amount is ${formatCurrency(currentPool.max_stake)}`);
+        return;
+      }
+
+      // Check account balance if account is selected
+      if (selectedAccount && stakeAmount > selectedAccount.balance) {
+        setError(`Insufficient balance in ${selectedAccount.name}. Available: ${formatCurrency(selectedAccount.balance)}`);
+        return;
+      }
+
+      try {
+        setIsSubmitting(true);
+        const poolIdNum = parseInt(selectedPoolId);
+        const accountIdNum = selectedAccountId ? parseInt(selectedAccountId) : undefined;
+        await onStake(poolIdNum, stakeAmount, duration, accountIdNum);
+        
+        // Reset form on success
+        setAmount('');
+        setError('');
+        setSelectedAccountId('');
+        toast({
+          title: "Stake Successful",
+          description: `Successfully staked ${formatCurrency(stakeAmount)} in ${currentPool.name}${
+            selectedAccount ? ` from ${selectedAccount.name}` : ''
+          }`,
+        });
+        onClose();
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.detail || 'Failed to stake tokens';
+        setError(errorMessage);
+        toast({
+          title: "Staking Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
+    } catch (parseError) {
+      setError('Invalid amount format');
+      return;
     }
   };
 
   const calculateRewards = () => {
-    const stakeAmount = parseFloat(amount || '0');
-    if (!currentPool || stakeAmount <= 0) return { daily: 0, monthly: 0, yearly: 0 };
+    if (!currentPool || !amount || validationError) {
+      return { daily: 0, monthly: 0, yearly: 0 };
+    }
 
-    const dailyRate = currentPool.apy / 100 / 365;
-    const daily = stakeAmount * dailyRate;
-    const monthly = daily * 30;
-    const yearly = stakeAmount * (currentPool.apy / 100);
+    try {
+      const amountWei = parseUnits(amount, 18);
+      const stakeAmount = parseFloat(formatUnits(amountWei, 18));
+      
+      if (stakeAmount <= 0) return { daily: 0, monthly: 0, yearly: 0 };
 
-    return { daily, monthly, yearly };
+      const dailyRate = currentPool.apy / 100 / 365;
+      const daily = stakeAmount * dailyRate;
+      const monthly = daily * 30;
+      const yearly = stakeAmount * (currentPool.apy / 100);
+
+      return { daily, monthly, yearly };
+    } catch (error) {
+      return { daily: 0, monthly: 0, yearly: 0 };
+    }
   };
-
-  const rewards = calculateRewards();
 
   const handleQuickAmount = (percentage: number) => {
     if (selectedAccount) {
       const quickAmount = selectedAccount.balance * (percentage / 100);
-      setAmount(Math.min(quickAmount, currentPool?.max_stake || quickAmount).toString());
+      const maxAllowed = currentPool?.max_stake ? Math.min(quickAmount, currentPool.max_stake) : quickAmount;
+      const formattedAmount = maxAllowed.toFixed(8).replace(/\.?0+$/, '');
+      handleAmountChange(formattedAmount);
     } else if (currentPool) {
       const quickAmount = currentPool.max_stake * (percentage / 100);
-      setAmount(quickAmount.toString());
+      const formattedAmount = quickAmount.toFixed(8).replace(/\.?0+$/, '');
+      handleAmountChange(formattedAmount);
     }
   };
 
@@ -240,11 +275,32 @@ export function StakeModal({
               }}
               className="w-full px-3 py-2 border border-input rounded-md bg-background"
             >
-              {pools.map((pool) => (
-                <option key={pool.id} value={pool.id.toString()}>
-                  {pool.name} - {pool.apy}% APY
-                </option>
-              ))}
+              {pools.map((pool, index) => {
+                // Safe key validation for select options
+                const poolIdNumber = Number(pool.id);
+                const isValidPoolId = Number.isFinite(poolIdNumber) && poolIdNumber >= 0;
+                const safeKey = isValidPoolId ? `modal-pool-${poolIdNumber}` : `modal-pool-fallback-${index}`;
+                
+                const safeValue = isValidPoolId ? pool.id.toString() : `fallback-${index}`;
+
+                // Log any problematic pool data
+                if (!isValidPoolId) {
+                  console.warn(`⚠️ Modal pool with invalid ID:`, {
+                    poolData: pool,
+                    originalId: pool.id,
+                    parsedId: poolIdNumber,
+                    fallbackKey: safeKey,
+                    fallbackValue: safeValue,
+                    index
+                  });
+                }
+
+                return (
+                  <option key={safeKey} value={safeValue}>
+                    {pool.name || `Pool ${index + 1}`} - {pool.apy || 0}% APY
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -325,17 +381,28 @@ export function StakeModal({
             <div className="relative">
               <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <input
-                type="number"
-                step="0.00000001"
-                min="0"
-                max={availableBalance}
+                type="text"
+                inputMode="decimal"
+                pattern="^\d*(\.\d{0,8})?$"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value || '')}
+                onChange={(e) => handleAmountChange(e.target.value)}
                 placeholder="0.00000000"
-                className="w-full pl-10 pr-3 py-2 border border-input rounded-md bg-background focus:ring-2 focus:ring-ring focus:border-transparent"
+                className={`w-full pl-10 pr-3 py-2 border border-input rounded-md bg-background focus:ring-2 focus:ring-ring focus:border-transparent ${
+                  validationError ? 'border-red-500' : ''
+                }`}
+                autoComplete="off"
+                spellCheck="false"
                 required
               />
             </div>
+            
+            {/* Validation Error */}
+            {validationError && (
+              <p className="text-sm text-red-600 flex items-center gap-1 mt-1">
+                <AlertCircle className="w-3 h-3" />
+                {validationError}
+              </p>
+            )}
             
             {/* Enhanced Quick Amount Buttons */}
             <div className="flex gap-2 mt-2">
@@ -346,7 +413,9 @@ export function StakeModal({
                   onClick={() => {
                     const quickAmount = availableBalance * (percentage / 100);
                     const maxAllowed = currentPool?.max_stake || quickAmount;
-                    setAmount(Math.min(quickAmount, maxAllowed).toString());
+                    const finalAmount = Math.min(quickAmount, maxAllowed);
+                    const formattedAmount = finalAmount.toFixed(8).replace(/\.?0+$/, '');
+                    handleAmountChange(formattedAmount);
                   }}
                   className="flex-1 py-1 px-2 text-xs border border-border rounded hover:bg-muted transition-colors"
                   disabled={availableBalance === 0}
@@ -364,22 +433,38 @@ export function StakeModal({
                   {availableBalance.toLocaleString()} {selectedAccount ? 'USD' : 'FVT'}
                 </span>
               </div>
-              {amount && parseFloat(amount) > 0 && (
+              {amount && !validationError && (
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Remaining:</span>
                   <span className="font-mono">
-                    {Math.max(0, availableBalance - parseFloat(amount)).toLocaleString()} {selectedAccount ? 'USD' : 'FVT'}
+                    {(() => {
+                      try {
+                        const amountWei = parseUnits(amount, 18);
+                        const amountNum = parseFloat(formatUnits(amountWei, 18));
+                        return Math.max(0, availableBalance - amountNum).toLocaleString();
+                      } catch {
+                        return availableBalance.toLocaleString();
+                      }
+                    })()} {selectedAccount ? 'USD' : 'FVT'}
                   </span>
                 </div>
               )}
-              {parseFloat(amount || '0') > availableBalance && (
+              {amount && !validationError && (() => {
+                try {
+                  const amountWei = parseUnits(amount, 18);
+                  const amountNum = parseFloat(formatUnits(amountWei, 18));
+                  return amountNum > availableBalance;
+                } catch {
+                  return false;
+                }
+              })() && (
                 <p className="text-xs text-red-600 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   Insufficient balance
                 </p>
               )}
             </div>
-            
+
             {currentPool && (
               <p className="text-xs text-muted-foreground mt-1">
                 Min: {formatCurrency(currentPool.min_stake)} | Max: {formatCurrency(currentPool.max_stake)}
@@ -388,40 +473,32 @@ export function StakeModal({
           </div>
 
           {/* Rewards Preview */}
-          {amount && parseFloat(amount) > 0 && (
+          {amount && parseFloat(amount) > 0 && !validationError && (
             <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
               <h4 className="font-medium text-green-800 mb-2">Estimated Rewards</h4>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between text-green-700">
                   <span>Daily:</span>
-                  <span>+{formatCurrency(rewards.daily)}</span>
+                  <span>+{formatCurrency(calculateRewards().daily)}</span>
                 </div>
                 <div className="flex justify-between text-green-700">
                   <span>Monthly:</span>
-                  <span>+{formatCurrency(rewards.monthly)}</span>
+                  <span>+{formatCurrency(calculateRewards().monthly)}</span>
                 </div>
                 <div className="flex justify-between text-green-700 font-medium">
                   <span>Yearly:</span>
-                  <span>+{formatCurrency(rewards.yearly)}</span>
+                  <span>+{formatCurrency(calculateRewards().yearly)}</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Lock Period Warning */}
+          {/* Lock Period Warning with Countdown Preview */}
           {currentPool && currentPool.lock_period > 0 && (
-            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-orange-600 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-orange-800">Lock Period Notice</p>
-                  <p className="text-orange-700">
-                    Your tokens will be locked for {currentPool.lock_period} days. 
-                    Early withdrawal may result in penalties.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <LockPeriodWarning 
+              lockPeriod={currentPool.lock_period}
+              amount={amount}
+            />
           )}
 
           {error && (
@@ -444,8 +521,7 @@ export function StakeModal({
               disabled={
                 isSubmitting || 
                 !amount || 
-                parseFloat(amount) <= 0 || 
-                parseFloat(amount) > availableBalance ||
+                validationError !== '' ||
                 !isConnected ||
                 !isCorrectNetwork
               }
@@ -455,6 +531,46 @@ export function StakeModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// New component for lock period warning with countdown
+function LockPeriodWarning({ lockPeriod, amount }: { lockPeriod: number; amount: string }) {
+  const unlockTime = React.useMemo(() => {
+    if (lockPeriod > 0) {
+      const now = new Date();
+      return new Date(now.getTime() + (lockPeriod * 24 * 60 * 60 * 1000));
+    }
+    return null;
+  }, [lockPeriod]);
+
+  const countdown = useCountdown(unlockTime, new Date());
+
+  return (
+    <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+      <div className="flex items-start gap-2">
+        <AlertCircle className="w-4 h-4 text-orange-600 mt-0.5" />
+        <div className="text-sm space-y-2">
+          <div>
+            <p className="font-medium text-orange-800">Lock Period Notice</p>
+            <p className="text-orange-700">
+              Your tokens will be locked for {lockPeriod} days. 
+              Early withdrawal may result in penalties.
+            </p>
+          </div>
+          
+          {amount && parseFloat(amount) > 0 && unlockTime && (
+            <div className="mt-2 p-2 bg-orange-100/50 rounded border border-orange-300">
+              <p className="text-xs font-medium text-orange-800 mb-1">Lock Preview:</p>
+              <div className="text-xs text-orange-700 space-y-1">
+                <p>Unlock Date: {unlockTime.toLocaleDateString()} at {unlockTime.toLocaleTimeString()}</p>
+                <p className="font-mono">⏱️ {countdown.timeLeft}</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

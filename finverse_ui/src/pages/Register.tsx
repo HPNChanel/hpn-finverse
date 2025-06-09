@@ -9,8 +9,9 @@ export function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [localError, setLocalError] = useState('');
-  
-  const { register, isAuthenticated, isLoading, error, clearError } = useAuth();
+  const [error, setError] = useState<any>(null);
+
+  const { register, isAuthenticated, isLoading, error: authError, clearError } = useAuth();
   const navigate = useNavigate();
 
   if (isAuthenticated) {
@@ -66,10 +67,7 @@ export function Register() {
     }
   };
 
-  // Safe error rendering
   const renderError = (errorValue: any) => {
-    if (!errorValue) return null;
-    
     if (typeof errorValue === 'string') {
       return errorValue;
     }
@@ -87,7 +85,7 @@ export function Register() {
     return 'An unexpected error occurred';
   };
 
-  const displayError = localError || renderError(error);
+  const displayError = localError || renderError(authError);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">

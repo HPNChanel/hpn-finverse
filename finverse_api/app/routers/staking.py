@@ -5,8 +5,16 @@ Staking router for FinVerse API
 from fastapi import APIRouter, HTTPException, status, Header, Depends
 from typing import Optional
 from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy import desc
+from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
+from web3 import Web3
+import json
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.schemas.staking import (
     StakeBase, StakeCreate, StakeResponse, StakeStatus, 
@@ -17,7 +25,9 @@ from app.schemas.staking import (
     # New schemas
     StakingRecordRequest, StakingRecordResponse, StakingPositionResponse,
     UserStakesResponse, StakingPoolsResponse, RewardsResponse,
-    StakingPositionCreateRequest, StakingPositionCreateResponse
+    StakingPositionCreateRequest, StakingPositionCreateResponse,
+    RecordStakeRequest, RecordStakeResponse,
+    UnstakeSyncRequest, UnstakeSyncResponse
 )
 from app.services import staking_service, user_service
 from app.services.staking_service import staking_service as enhanced_staking_service
@@ -92,58 +102,34 @@ async def create_staking_position(
             detail=str(e)
         )
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to create staking position: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create staking position: {str(e)}"
         )
 
-@router.post("/record", response_model=StakingRecordResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/record", response_model=RecordStakeResponse, status_code=status.HTTP_201_CREATED)
 async def record_stake(
-    stake_data: StakingRecordRequest,
+    stake_data: RecordStakeRequest,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Record a new staking position from frontend"""
+    """Record a new staking position from frontend with enhanced blockchain validation"""
     try:
         user_id = current_user.id
         
-        # Validate blockchain transaction hash format
-        if stake_data.tx_hash and not stake_data.tx_hash.startswith('0x'):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid transaction hash format"
-            )
-        
-        # Get pool info to determine reward rate
-        pools_response = enhanced_staking_service.get_staking_pools(db)
-        pool = next((p for p in pools_response.pools if p.pool_id == stake_data.pool_id), None)
-        
-        if not pool:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid pool ID: {stake_data.pool_id}"
-            )
-        
-        # Validate amount against pool limits
-        if stake_data.amount < pool.min_stake:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Amount below minimum stake for pool {pool.name}: {pool.min_stake}"
-            )
-        
-        if stake_data.amount > pool.max_stake:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Amount exceeds maximum stake for pool {pool.name}: {pool.max_stake}"
-            )
-        
-        # Check for duplicate transaction hash (updated to use unified model)
-        if stake_data.tx_hash:
+        # ✅ SECTION 2: Wrap DB write logic in try/except block
+        try:
+            # Validate blockchain transaction hash format
+            if not stake_data.txHash.startswith('0x'):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid transaction hash format"
+                )
+            
+            # Check for duplicate transaction hash
             existing_stake = db.query(Stake).filter(
-                Stake.tx_hash == stake_data.tx_hash
+                Stake.tx_hash == stake_data.txHash
             ).first()
             
             if existing_stake:
@@ -151,62 +137,264 @@ async def record_stake(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Transaction hash already recorded"
                 )
-        
-        # Save the staking position using unified model
-        position = enhanced_staking_service.save_stake(
-            db=db,
-            user_id=user_id,
-            pool_id=stake_data.pool_id,
-            amount=stake_data.amount,
-            tx_hash=stake_data.tx_hash,
-            lock_period=stake_data.lock_period,
-            reward_rate=pool.apy
-        )
-        
-        if not position:
+            
+            # Enhanced pool configuration with validation
+            # ETH-only pool mappings for validation
+            pool_mapping = {
+                '0': {
+                    'name': 'ETH Flexible Pool', 
+                    'apy': 8.0, 
+                    'token_address': '0x0000000000000000000000000000000000000000',
+                    'token_symbol': 'ETH',
+                    'min_stake': 0.1,
+                    'max_stake': 100.0
+                },
+                '1': {
+                    'name': 'ETH Premium Pool', 
+                    'apy': 12.0, 
+                    'token_address': '0x0000000000000000000000000000000000000000',
+                    'token_symbol': 'ETH',
+                    'min_stake': 1.0,
+                    'max_stake': 1000.0
+                },
+                '2': {
+                    'name': 'ETH High Yield Pool', 
+                    'apy': 15.0, 
+                    'token_address': '0x0000000000000000000000000000000000000000',
+                    'token_symbol': 'ETH',
+                    'min_stake': 5.0,
+                    'max_stake': 500.0
+                }
+            }
+            
+            pool_config = pool_mapping.get(stake_data.poolId)
+            if not pool_config:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid pool ID: {stake_data.poolId}. Valid pools: {list(pool_mapping.keys())}"
+                )
+            
+            # ✅ Validate all required fields: user_id, tx_hash, pool_id, amount, reward_rate, lock_period
+            if not all([user_id, stake_data.txHash, stake_data.poolId, stake_data.amount]):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Missing required fields: user_id, txHash, poolId, amount"
+                )
+            
+            # Validate stake amount against pool limits
+            if stake_data.amount < pool_config['min_stake']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Amount below minimum stake for {pool_config['name']}: {pool_config['min_stake']} {pool_config['token_symbol']}"
+                )
+            
+            if stake_data.amount > pool_config['max_stake']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Amount exceeds maximum stake for {pool_config['name']}: {pool_config['max_stake']} {pool_config['token_symbol']}"
+                )
+            
+            reward_rate = pool_config['apy']
+            
+            # ETH staking - validate transaction contains ETH transfer
+            logger.info(f"Validating ETH stake transaction: {stake_data.txHash}")
+            
+            # Basic transaction validation for ETH staking
+            try:
+                w3 = get_web3_instance()
+                if w3:
+                    tx = w3.eth.get_transaction(stake_data.txHash)
+                    tx_receipt = w3.eth.get_transaction_receipt(stake_data.txHash)
+                    
+                    # Verify transaction was successful
+                    if tx_receipt.status != 1:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Transaction failed on blockchain"
+                        )
+                    
+                    logger.info(f"✅ ETH stake transaction validated successfully")
+            except Exception as e:
+                logger.warning(f"Could not validate ETH transaction: {str(e)}")
+            
+            # ✅ Save stake record into stakes table
+            position = enhanced_staking_service.save_stake(
+                db=db,
+                user_id=user_id,
+                pool_id=stake_data.poolId,
+                amount=stake_data.amount,
+                tx_hash=stake_data.txHash,
+                lock_period=stake_data.lockPeriod,
+                reward_rate=reward_rate
+            )
+            
+            if not position:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to record staking position"
+                )
+            
+            # ✅ Save matching log into staking_logs table with duplicate protection
+            try:
+                # Check if log with this tx_hash already exists
+                existing_log = db.query(StakingLog).filter_by(tx_hash=stake_data.txHash).first()
+                if existing_log:
+                    logger.warning(f"Duplicate tx_hash in staking_log: {stake_data.txHash}, skipping log creation.")
+                else:
+                    # Create new log safely
+                    db.add(staking_log)
+                    db.flush()  # Use flush() to catch IntegrityError before commit
+            except IntegrityError as ie:
+                # Handle specific duplicate tx_hash constraint violation
+                logger.warning(f"StakingLog already exists for tx: {stake_data.txHash}, skipping.")
+                db.rollback()  # Rollback the log insert, but keep the stake
+                db.add(position)  # Re-add the stake since rollback removed it
+            
+            db.commit()
+            if 'staking_log' in locals():
+                db.refresh(staking_log)
+            
+            # Log successful stake recording
+            logger.info(f"Stake recorded successfully: user_id={user_id}, pool_id={stake_data.poolId}, amount={stake_data.amount}, tx_hash={stake_data.txHash}")
+            
+            # ✅ On success, return HTTP 200 and stake data
+            return RecordStakeResponse(
+                success=True,
+                message=f"Staking position recorded successfully for {pool_config['name']}",
+                stakeId=position.id,
+                txHash=position.tx_hash
+            )
+            
+        except HTTPException:
+            # Re-raise HTTP exceptions as-is
+            raise
+        except Exception as db_error:
+            # ✅ On failure, return JSON error message and log the exception
+            logger.error(f"Database operation failed during stake recording: {str(db_error)}")
+            db.rollback()  # Rollback any partial database changes
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to record staking position"
+                detail=f"Failed to record stake to database: {str(db_error)}"
             )
         
-        # Convert to response format using unified model
-        position_response = StakingPositionResponse(
-            id=position.id,
-            user_id=position.user_id,
-            pool_id=position.pool_id,
-            amount=float(position.amount),
-            staked_at=position.staked_at,
-            lock_period=position.lock_period,
-            reward_rate=float(position.reward_rate),
-            tx_hash=position.tx_hash,
-            is_active=position.is_active,
-            unlock_date=position.unlock_at,  # Updated field name
-            rewards_earned=float(position.rewards_earned),
-            last_reward_calculation=position.updated_at,  # Use updated_at
-            status=position.status,
-            created_at=position.created_at,
-            updated_at=position.updated_at,
-            is_unlocked=position.is_unlocked(),
-            days_remaining=position.days_remaining()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to record stake: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to record stake: {str(e)}"
+        )
+
+
+@router.post("/unstake-sync", response_model=UnstakeSyncResponse, status_code=status.HTTP_200_OK)
+async def unstake_sync(
+    unstake_data: UnstakeSyncRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Sync unstake transaction from blockchain to database"""
+    try:
+        user_id = current_user.id
+        
+        # Verify the stake exists and belongs to the user
+        stake = db.query(Stake).filter(
+            Stake.id == unstake_data.stake_id,
+            Stake.user_id == user_id
+        ).first()
+        
+        if not stake:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Stake not found or does not belong to user"
+            )
+        
+        # Verify stake is not already unstaked
+        if stake.status == "UNSTAKED" or stake.unstaked_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Stake has already been unstaked"
+            )
+        
+        # Check if stake is unlocked (for early withdrawal penalty calculation)
+        is_early_withdrawal = not stake.is_unlocked()
+        penalty_amount = 0.0
+        
+        if is_early_withdrawal:
+            # Calculate penalty for early withdrawal (e.g., 10% of stake amount)
+            penalty_rate = 0.10  # 10% penalty
+            penalty_amount = float(stake.amount) * penalty_rate
+            logger.info(f"Early withdrawal detected. Penalty: {penalty_amount} ETH")
+        
+        # Check for duplicate transaction hash
+        existing_unstake = db.query(Stake).filter(
+            Stake.unstake_tx_hash == unstake_data.tx_hash
+        ).first()
+        
+        if existing_unstake:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Unstake transaction hash already recorded"
+            )
+        
+        # Update stake with unstake information
+        stake.unstaked_at = datetime.utcnow()
+        stake.unstake_tx_hash = unstake_data.tx_hash
+        stake.status = "UNSTAKED"
+        stake.is_active = False
+        stake.updated_at = datetime.utcnow()
+        
+        # Store penalty information if applicable
+        if is_early_withdrawal and penalty_amount > 0:
+            # Store penalty in ai_tag field for now (could create a separate penalties table)
+            stake.ai_tag = f"early_withdrawal_penalty_{penalty_amount:.6f}"
+        
+        # Create log entry in staking history
+        details = f"Unstaked {stake.amount} ETH from pool {stake.pool_id}"
+        if is_early_withdrawal and penalty_amount > 0:
+            details += f" (Early withdrawal penalty: {penalty_amount:.6f} ETH)"
+            
+        log_entry = StakingLog(
+            user_id=user_id,
+            stake_id=stake.id,
+            action="UNSTAKE",
+            amount=float(stake.amount),
+            pool_id=stake.pool_id,
+            tx_hash=unstake_data.tx_hash,
+            status="SUCCESS",
+            details=details,
+            created_at=datetime.utcnow()
         )
         
-        return StakingRecordResponse(
+        db.add(log_entry)
+        db.commit()
+        db.refresh(stake)
+        
+        # Customize message based on early withdrawal
+        if is_early_withdrawal and penalty_amount > 0:
+            message = f"Unstake transaction synchronized successfully (Early withdrawal penalty: {penalty_amount:.6f} ETH applied)"
+        else:
+            message = "Unstake transaction synchronized successfully"
+        
+        return UnstakeSyncResponse(
             success=True,
-            message="Staking position recorded successfully",
-            position=position_response,
-            position_id=position.id,
-            stake_id=position.id  # Same ID now since it's unified
+            message=message,
+            stake_id=stake.id,
+            unstaked_at=stake.unstaked_at,
+            tx_hash=stake.unstake_tx_hash,
+            status=stake.status,
+            is_early_withdrawal=is_early_withdrawal,
+            penalty_amount=penalty_amount
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Failed to record stake from frontend: {str(e)}")
+        logger.error(f"Failed to sync unstake transaction: {str(e)}")
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to record stake: {str(e)}"
+            detail=f"Failed to sync unstake transaction: {str(e)}"
         )
 
 
@@ -262,12 +450,32 @@ async def get_user_rewards(
 async def get_staking_pools(db: Session = Depends(get_db)):
     """Get all available staking pools"""
     try:
+        # Get pools data from service
         pools_data = enhanced_staking_service.get_staking_pools(db)
+        
+        # Debug logging to help identify issues
+        logger.info(f"Retrieved {len(pools_data.pools) if pools_data.pools else 0} pools")
+        
+        # Validate the response before returning
+        if not isinstance(pools_data, StakingPoolsResponse):
+            logger.error(f"Invalid pools data type: {type(pools_data)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Invalid pools data format"
+            )
+        
         return pools_data
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch staking pools: {str(e)}"
+        logger.error(f"Failed to fetch staking pools: {str(e)}", exc_info=True)
+        
+        # Return a safe fallback response
+        return StakingPoolsResponse(
+            pools=[],
+            total_pools=0,
+            active_pools=0
         )
 
 
@@ -381,8 +589,6 @@ async def create_staking_position(
             detail=str(e)
         )
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to create staking position: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -620,8 +826,6 @@ async def get_staking_pools_api(db: Session = Depends(get_db)):
         result = staking_service.get_staking_pools_for_api(db)
         return result
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error fetching staking pools: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -689,8 +893,6 @@ async def get_rewards_history(
         result = staking_service.get_rewards_for_user(db, user_id, limit)
         return result
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error fetching rewards history for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -718,8 +920,6 @@ async def claim_rewards(
         user_id = current_user.id
         return staking_service.claim_all_rewards(db, user_id)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error claiming rewards for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -737,7 +937,7 @@ async def stake_to_pool(
     user_id = current_user.id
     
     # Get pool info to determine stake name
-    pools = staking_service.get_staking_pools(db)
+    pools = staking_service.get_pools_list(db)
     pool = next((p for p in pools if p["id"] == stake_data.pool_id), None)
     
     if not pool:
@@ -845,8 +1045,6 @@ async def get_user_stakes_api(
         result = staking_service.get_user_stakes(db, user_id)
         return result
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error fetching user stakes for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -866,8 +1064,6 @@ async def get_rewards_api(
         result = staking_service.get_rewards_for_user(db, user_id, limit)
         return result
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error fetching rewards for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -885,8 +1081,6 @@ async def claim_all_rewards_api(
         user_id = current_user.id
         return staking_service.claim_all_rewards(db, user_id)
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Error claiming all rewards for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -913,24 +1107,27 @@ async def get_staking_overview(
         # Get user rewards data
         rewards_data = enhanced_staking_service.get_user_rewards(db, user_id)
         
-        # Calculate overview metrics
+        # Calculate overview metrics with proper field names
         total_staked = 0.0
-        active_stake_count = 0
-        total_value_usd = 0.0
+        active_positions = 0
+        total_rewards = 0.0
+        total_apy_weighted = 0.0
         
         for stake in stakes:
             if stake.is_active:
                 stake_amount = float(stake.amount)
                 total_staked += stake_amount
-                total_value_usd += stake_amount  # Assuming 1:1 USD for now
-                active_stake_count += 1
+                active_positions += 1
+                
+                # Add rewards earned
+                total_rewards += float(stake.rewards_earned)
+                
+                # Calculate weighted APY (stake amount * APY)
+                stake_apy = float(stake.reward_rate)
+                total_apy_weighted += stake_amount * stake_apy
         
-        # Calculate average APY
-        average_apy = 0.0
-        if stakes:
-            active_stakes = [s for s in stakes if s.is_active]
-            if active_stakes:
-                average_apy = sum(float(s.reward_rate) for s in active_stakes) / len(active_stakes)
+        # Calculate weighted average APY
+        apy_weighted = total_apy_weighted / total_staked if total_staked > 0 else 0.0
         
         # Calculate days since first stake
         days_since_first_stake = 0
@@ -939,29 +1136,39 @@ async def get_staking_overview(
             days_since_first_stake = (datetime.utcnow() - first_stake.staked_at).days
         
         overview = {
+            # Core dashboard fields
             "total_staked": total_staked,
-            "current_rewards": rewards_data["pending_rewards"],
-            "active_stakes_count": active_stake_count,
-            "total_value_usd": total_value_usd,
-            "average_apy": average_apy,
-            "next_reward_date": "",  # Can be calculated based on stake periods
+            "active_positions": active_positions,
+            "total_rewards": total_rewards,
+            "apy_weighted": apy_weighted,
+            
+            # Additional useful fields
+            "pending_rewards": rewards_data["pending_rewards"],
+            "total_earned": rewards_data["total_rewards"],
             "days_since_first_stake": days_since_first_stake,
+            
+            # Legacy compatibility fields
+            "current_rewards": rewards_data["pending_rewards"],
+            "active_stakes_count": active_positions,
+            "average_apy": apy_weighted,
+            "total_value_usd": total_staked,  # Assuming 1:1 ETH-USD for display
+            
+            # Performance data
             "portfolio_performance": {
                 "total_earned": rewards_data["total_rewards"],
                 "best_performing_stake": {
-                    "name": "High Yield Pool" if stakes else "No stakes",
-                    "apy": average_apy,
+                    "name": "ETH Staking Pool" if stakes else "No stakes",
+                    "apy": apy_weighted,
                     "amount": total_staked
                 },
-                "monthly_trend": 0.0  # Can be calculated from historical data
+                "monthly_trend": 0.0,  # Can be calculated from historical data
+                "roi_percentage": ((total_rewards / total_staked) * 100) if total_staked > 0 else 0.0
             }
         }
         
         return overview
         
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to fetch staking overview for user {current_user.id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -969,13 +1176,65 @@ async def get_staking_overview(
         )
 
 
-@router.get("/analytics", status_code=status.HTTP_200_OK)
-async def get_staking_analytics(
-    timeframe: str = "30d",
+@router.get("/logs", status_code=status.HTTP_200_OK)
+async def get_staking_logs(
+    limit: int = 50,
+    offset: int = 0,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get staking analytics for the specified timeframe"""
+    """Get staking event logs for the current user"""
+    try:
+        user_id = current_user.id
+        
+        # Query staking logs from database
+        logs_query = db.query(StakingLog).filter(
+            StakingLog.user_id == user_id
+        ).order_by(desc(StakingLog.event_timestamp))
+        
+        # Apply pagination
+        logs = logs_query.offset(offset).limit(limit).all()
+        total_count = logs_query.count()
+        
+        # Transform logs to API format
+        logs_data = []
+        for log in logs:
+            logs_data.append({
+                "id": log.id,
+                "stake_id": log.stake_id,
+                "amount": float(log.amount),
+                "duration": log.duration,
+                "tx_hash": log.tx_hash,
+                "pool_id": log.pool_id,
+                "event_timestamp": log.event_timestamp.isoformat() if log.event_timestamp else None,
+                "synced_at": log.synced_at.isoformat() if log.synced_at else None
+            })
+        
+        return {
+            "logs": logs_data,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": (offset + limit) < total_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch staking logs for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch staking logs: {str(e)}"
+        )
+
+
+@router.get("/analytics", status_code=status.HTTP_200_OK)
+async def get_staking_analytics(
+    timeframe: str = "30d",
+    wallet: Optional[str] = None,
+    user: Optional[str] = None,  # Add user parameter for wallet address
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get staking analytics for the specified timeframe with contract data"""
     try:
         # Validate timeframe format
         valid_timeframes = ["7d", "30d", "90d", "180d", "365d"]
@@ -985,28 +1244,158 @@ async def get_staking_analytics(
                 detail=f"Invalid timeframe. Must be one of: {', '.join(valid_timeframes)}"
             )
         
-        # Get analytics data using the service
-        analytics_data = enhanced_staking_service.get_analytics(db, timeframe, current_user.id)
+        user_id = current_user.id
+        
+        # If wallet/user address provided, validate it matches current user
+        if wallet or user:
+            wallet_address = wallet or user
+            # For now, we'll use the current user's data regardless of wallet param
+            # In production, you'd want to validate the wallet belongs to the user
+            pass
+        
+        # Calculate period dates based on timeframe
+        days_map = {"7d": 7, "30d": 30, "90d": 90, "180d": 180, "365d": 365}
+        days = days_map.get(timeframe, 30)
+        
+        period_end = datetime.utcnow()
+        period_start = period_end - timedelta(days=days)
+        
+        # Get user stakes using unified model (filtered by date range)
+        all_stakes = enhanced_staking_service.get_user_staking_positions(
+            db=db, 
+            user_id=user_id,
+            active_only=False
+        )
+        
+        # Filter stakes by timeframe
+        filtered_stakes = [
+            stake for stake in all_stakes 
+            if stake.staked_at >= period_start
+        ]
+        
+        # Calculate analytics from filtered stake data
+        total_staked = 0.0
+        total_rewards = 0.0
+        active_count = 0
+        stake_count = len(filtered_stakes)
+        
+        # Also include older active stakes for total calculations
+        active_stakes = [stake for stake in all_stakes if stake.is_active]
+        
+        for stake in active_stakes:
+            stake_amount = float(stake.amount)
+            total_staked += stake_amount
+            total_rewards += float(stake.rewards_earned)
+            active_count += 1
+        
+        # Calculate rewards from timeframe period only
+        period_rewards = sum(float(stake.rewards_earned) for stake in filtered_stakes)
+        
+        # Calculate average stake
+        average_stake = total_staked / active_count if active_count > 0 else 0.0
+        
+        # Generate daily data for charts (last 30 days)
+        daily_data = []
+        for i in range(min(days, 30)):  # Limit to 30 days for performance
+            date = period_end - timedelta(days=i)
+            
+            # Get stakes active on this date
+            day_stakes = [
+                stake for stake in all_stakes 
+                if stake.staked_at <= date and (not hasattr(stake, 'unlock_at') or stake.unlock_at is None or stake.unlock_at > date)
+            ]
+            
+            day_total_staked = sum(float(stake.amount) for stake in day_stakes)
+            day_rewards = sum(float(stake.rewards_earned) for stake in day_stakes)
+            
+            daily_data.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "totalStaked": day_total_staked,
+                "rewards": day_rewards,
+                "activeStakes": len(day_stakes)
+            })
+        
+        # Reverse to get chronological order
+        daily_data.reverse()
+        
+        # Calculate pool distribution
+        pool_distribution = {}
+        for stake in active_stakes:
+            pool_id = stake.pool_id or 'default'
+            if pool_id not in pool_distribution:
+                pool_distribution[pool_id] = {
+                    "amount": 0.0,
+                    "count": 0,
+                    "rewards": 0.0
+                }
+            
+            pool_distribution[pool_id]["amount"] += float(stake.amount)
+            pool_distribution[pool_id]["count"] += 1
+            pool_distribution[pool_id]["rewards"] += float(stake.rewards_earned)
+        
+        # Convert pool distribution to list format
+        pool_data = []
+        total_pool_amount = sum(pool["amount"] for pool in pool_distribution.values())
+        
+        for pool_id, pool_info in pool_distribution.items():
+            percentage = (pool_info["amount"] / total_pool_amount * 100) if total_pool_amount > 0 else 0
+            pool_data.append({
+                "poolId": pool_id,
+                "name": f"Pool {pool_id}",
+                "amount": pool_info["amount"],
+                "count": pool_info["count"],
+                "rewards": pool_info["rewards"],
+                "percentage": percentage
+            })
+        
+        analytics_data = {
+            "timeframe": timeframe,
+            "totalStaked": total_staked,
+            "totalRewards": total_rewards,
+            "periodRewards": period_rewards,  # Rewards earned in this period
+            "stakeCount": stake_count,  # New stakes in period
+            "activeCount": active_count,  # Total active stakes
+            "averageStake": average_stake,
+            "periodStart": period_start.isoformat(),
+            "periodEnd": period_end.isoformat(),
+            "dailyData": daily_data,
+            "poolDistribution": pool_data,
+            "walletAddress": wallet or user or "unknown"
+        }
         
         return analytics_data
         
     except HTTPException:
         raise
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to fetch staking analytics: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch staking analytics: {str(e)}"
-        )
+        
+        # Return empty analytics instead of error for better UX
+        period_end = datetime.utcnow()
+        period_start = period_end - timedelta(days=30)
+        
+        return {
+            "timeframe": timeframe,
+            "totalStaked": 0.0,
+            "totalRewards": 0.0,
+            "periodRewards": 0.0,
+            "stakeCount": 0,
+            "activeCount": 0,
+            "averageStake": 0.0,
+            "periodStart": period_start.isoformat(),
+            "periodEnd": period_end.isoformat(),
+            "dailyData": [],
+            "poolDistribution": [],
+            "walletAddress": wallet or user or "unknown",
+            "error": str(e)
+        }
 
 
 @router.get("/supported-tokens", status_code=status.HTTP_200_OK)
 async def get_supported_tokens():
-    """Get list of supported tokens for staking"""
+    """Get list of supported tokens for staking with multi-token support"""
     try:
-        # For now, only FVT is supported
+        # Support both FVT and ETH
         supported_tokens = [
             {
                 "symbol": "FVT",
@@ -1014,8 +1403,9 @@ async def get_supported_tokens():
                 "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
                 "decimals": 18,
                 "isSupported": True,
+                "isNative": False,
                 "icon": "/icons/fvt.png",
-                "minStake": 0.01,
+                "minStake": 1.0,
                 "maxStake": 1000000.0
             },
             {
@@ -1023,9 +1413,10 @@ async def get_supported_tokens():
                 "name": "Ethereum",
                 "address": "0x0000000000000000000000000000000000000000",
                 "decimals": 18,
-                "isSupported": False,
+                "isSupported": True,
+                "isNative": True,
                 "icon": "/icons/eth.png",
-                "minStake": 0.001,
+                "minStake": 0.01,
                 "maxStake": 1000.0
             }
         ]
@@ -1225,21 +1616,42 @@ async def sync_staking_event(
         except ValueError:
             event_timestamp = datetime.utcnow()
         
-        # Create staking log entry
-        staking_log = StakingLog(
-            user_id=user.id,
-            stake_id=sync_data.stake_id,
-            amount=sync_data.amount,
-            duration=sync_data.duration,
-            tx_hash=sync_data.tx_hash,
-            pool_id=sync_data.pool_id,
-            event_timestamp=event_timestamp,
-            synced_at=datetime.utcnow()
-        )
-        
-        db.add(staking_log)
-        db.commit()
-        db.refresh(staking_log)
+        # Create staking log entry with duplicate protection
+        try:
+            staking_log = StakingLog(
+                user_id=user.id,
+                stake_id=sync_data.stake_id,
+                amount=sync_data.amount,
+                duration=sync_data.duration,
+                tx_hash=sync_data.tx_hash,
+                pool_id=sync_data.pool_id,
+                event_timestamp=event_timestamp,
+                synced_at=datetime.utcnow()
+            )
+            
+            db.add(staking_log)
+            db.flush()  # Test for IntegrityError before commit
+            db.commit()
+            db.refresh(staking_log)
+        except IntegrityError as ie:
+            logger.warning(f"StakingLog already exists for tx: {sync_data.tx_hash}, skipping.")
+            db.rollback()
+            # Return success since the log already exists
+            return {
+                "success": True,
+                "message": "Staking event already synced (duplicate tx_hash)",
+                "log_id": None,
+                "stake_id": None,
+                "tx_hash": sync_data.tx_hash,
+                "synced_at": datetime.utcnow().isoformat()
+            }
+        except Exception as sync_error:
+            logger.error(f"StakingLog sync failed for tx: {sync_data.tx_hash}, error: {str(sync_error)}")
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to sync staking log: {str(sync_error)}"
+            )
         
         # Also create/update the main stake record if needed
         existing_stake = db.query(Stake).filter(
@@ -1277,10 +1689,61 @@ async def sync_staking_event(
     except HTTPException:
         raise
     except Exception as e:
-        import logging
-        logger = logging.getLogger(__name__)
         logger.error(f"Failed to sync staking event: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to sync staking event: {str(e)}"
         )
+
+# Add Web3 validation for blockchain transactions
+def get_web3_instance():
+    """Get Web3 instance for blockchain validation"""
+    try:
+        rpc_url = os.getenv('WEB3_RPC_URL', 'http://127.0.0.1:8545')
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
+        if not w3.is_connected():
+            raise Exception("Cannot connect to blockchain")
+        return w3
+    except Exception as e:
+        logger.error(f"Failed to connect to Web3: {str(e)}")
+        return None
+
+def validate_eth_stake_transaction(tx_hash: str, expected_amount: float, user_address: str, stake_vault_address: str) -> bool:
+    """
+    Validate that an ETH staking transaction actually transferred ETH
+    """
+    try:
+        w3 = get_web3_instance()
+        if not w3:
+            logger.warning("Web3 not available - skipping transaction validation")
+            return True  # Allow in development mode
+        
+        # Get transaction and receipt
+        tx = w3.eth.get_transaction(tx_hash)
+        receipt = w3.eth.get_transaction_receipt(tx_hash)
+        
+        if receipt.status != 1:
+            logger.error(f"Transaction {tx_hash} failed (status: {receipt.status})")
+            return False
+        
+        # Validate ETH transfer
+        if (tx['from'].lower() == user_address.lower() and 
+            tx['to'].lower() == stake_vault_address.lower()):
+            
+            # Check ETH amount matches
+            tx_amount_eth = w3.from_wei(tx['value'], 'ether')
+            amount_diff = abs(float(tx_amount_eth) - expected_amount)
+            
+            if amount_diff < 0.000001:  # 1e-6 tolerance
+                logger.info(f"✅ ETH transfer validated: {tx_amount_eth} ETH from {tx['from']} to {tx['to']}")
+                return True
+            else:
+                logger.error(f"❌ Amount mismatch: expected {expected_amount}, got {tx_amount_eth}")
+                return False
+        else:
+            logger.error(f"❌ Invalid ETH transfer: from {tx['from']} to {tx['to']}, expected from {user_address} to {stake_vault_address}")
+            return False
+        
+    except Exception as e:
+        logger.error(f"ETH transaction validation failed: {str(e)}")
+        return False

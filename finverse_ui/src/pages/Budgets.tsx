@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { CreateBudgetForm } from '@/components/budget/CreateBudgetForm';
 import { EditBudgetForm } from '@/components/budget/EditBudgetForm';
 import { useSearchParams } from 'react-router-dom';
+import api from '@/lib/api';
 
 export function Budgets() {
   const [budgets, setBudgets] = useState<Budget[]>([]);

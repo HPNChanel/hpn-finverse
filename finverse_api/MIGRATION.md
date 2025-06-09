@@ -4,7 +4,7 @@
 
 This migration documentation covers the database schema synchronization for FinVerse API, including the modernization of the user authentication system, budget management, critical BudgetPlan cleanup, and module structure consolidation.
 
-## Latest Migration: Email-Based Authentication + Budget System Modernization + BudgetPlan Cleanup + Module Consolidation + AI/Blockchain Enhancement + SQLAlchemy Relationship Fix
+## Latest Migration: Email-Based Authentication + Budget System Modernization + BudgetPlan Cleanup + Module Consolidation + AI/Blockchain Enhancement + SQLAlchemy Relationship Fix + Token Address Support
 
 ### Changes Made
 
@@ -57,6 +57,7 @@ This migration documentation covers the database schema synchronization for FinV
    - Added `ai_tag` for AI-assigned stake pattern categorization
    - Added `claimable_rewards` for separate reward tracking
    - Added `apy_snapshot` for historical APY recording
+   - **CRITICAL FIX**: Expanded `reward_rate` from DECIMAL(5,4) to DECIMAL(5,2) to handle APY values up to 999.99%
 
 7. **Unified Staking Model**:
    - **BREAKING CHANGE**: Replaced both `stakes` and `staking_positions` tables with unified `Stake` model
@@ -65,6 +66,7 @@ This migration documentation covers the database schema synchronization for FinV
    - **AI FIELDS**: Added `model_confidence`, `ai_tag`, `predicted_reward` for ML analytics
    - **BLOCKCHAIN**: Enhanced `tx_hash` tracking and validation
    - **PRECISION**: All financial fields use DECIMAL(18,8) for crypto-level precision
+   - **RATE PRECISION**: Updated reward_rate to DECIMAL(5,2) for proper APY storage (was DECIMAL(5,4))
    - **TIME TRACKING**: Added `unlock_at` field for precise unlock time calculation
    - **REWARDS**: Separate tracking of `claimable_rewards` and `rewards_earned`
 
@@ -73,6 +75,14 @@ This migration documentation covers the database schema synchronization for FinV
    - Replaced `Config` classes with `model_config = ConfigDict(...)`
    - Updated `orm_mode = True` to `from_attributes = True`
    - Added proper forward reference handling
+
+9. **Token Address Support**:
+   - **ENHANCEMENT**: Added `token_address` column to stakes table
+   - **PURPOSE**: Support for multi-token staking (ETH, FVT, other ERC20s)
+   - **FORMAT**: String(42) for Ethereum addresses (0x + 40 hex chars)
+   - **DEFAULT**: NULL for backward compatibility
+   - **SPECIAL**: Uses "0x0000000000000000000000000000000000000000" for ETH
+   - **INDEX**: Added performance index for token-based queries
 
 ### Critical Module Cleanup
 
@@ -197,6 +207,13 @@ The ambiguous foreign key error between `FinancialAccount` and `Transaction` has
 11. **Test AI/Blockchain integrations** with new fields
 12. **Verify SQLAlchemy model loading** without errors
 13. **Test consolidated budget endpoints**
+14. **Apply token address migration**:
+    ```bash
+    cd finverse_api
+    alembic revision --autogenerate -m "add token_address to stakes"
+    alembic upgrade head
+    ```
+15. **Verify token address support**: Test analytics endpoints with token filtering
 
 ## API Changes
 
@@ -264,6 +281,12 @@ The ambiguous foreign key error between `FinancialAccount` and `Transaction` has
 - [ ] **Forward references resolve without circular import issues**
 - [ ] **User registration works without relationship mapping errors**
 - [ ] **Financial precision calculations maintain accuracy**
+- [ ] **Token address column exists in stakes table**
+- [ ] **Token address index created for performance**
+- [ ] **Analytics endpoints support token filtering**
+- [ ] **ETH staking uses 0x0000000000000000000000000000000000000000**
+- [ ] **ERC20 staking uses proper contract addresses**
+- [ ] **Backward compatibility maintained for existing stakes**
 
 ## Notes
 

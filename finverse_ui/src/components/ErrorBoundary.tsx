@@ -26,8 +26,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false });
-    window.location.reload();
+    this.setState({ hasError: false, error: undefined });
+    
+    window.dispatchEvent(new CustomEvent('errorBoundaryRetry', {
+      detail: { error: this.state.error, timestamp: Date.now() }
+    }));
   };
 
   render() {
@@ -43,7 +46,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div>
               <h2 className="text-xl font-semibold text-foreground mb-2">Something went wrong</h2>
               <p className="text-muted-foreground mb-4">
-                The dashboard encountered an unexpected error. Please try refreshing the page.
+                The dashboard encountered an unexpected error. Click retry to recover without refreshing the page.
               </p>
               {this.state.error && (
                 <details className="text-sm text-muted-foreground mb-4">
@@ -54,13 +57,21 @@ export class ErrorBoundary extends Component<Props, State> {
                 </details>
               )}
             </div>
-            <button
-              onClick={this.handleRetry}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors mx-auto"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh Page
-            </button>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={this.handleRetry}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Retry
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition-colors"
+              >
+                Force Refresh
+              </button>
+            </div>
           </div>
         </div>
       );

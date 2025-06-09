@@ -61,7 +61,7 @@ export function StakingLogin() {
   // Show loading state during initial auth check
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex items-center justify-center p-4">
+      <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-green-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="flex items-center justify-center py-8">
             <div className="text-center">
@@ -75,10 +75,10 @@ export function StakingLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
-      {/* Header */}
+    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-green-50">
+      {/* Single Header - Remove any duplicate header rendering */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link 
               to="/dashboard" 
@@ -101,10 +101,10 @@ export function StakingLogin() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex items-center justify-center min-h-[calc(100vh-4rem)] p-4">
-        <div className="w-full max-w-md">
-          {/* Security Notice */}
+      {/* Main Content - Single instance, responsive layout */}
+      <main className="flex items-center justify-center min-h-[calc(100vh-4rem)] py-10">
+        <div className="w-full max-w-md mx-auto px-4 sm:px-6">
+          {/* Security Notice - Single instance */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-start gap-3">
               <Shield className="w-5 h-5 text-blue-600 mt-0.5" />

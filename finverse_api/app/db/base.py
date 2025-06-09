@@ -12,6 +12,7 @@ from app.models.financial_account import FinancialAccount
 from app.models.financial_goal import FinancialGoal
 from app.models.category import Category
 from app.models.budget import Budget, BudgetAlert
+from app.models.internal_transfer import InternalTransfer
 
 # All models must be imported before initializing migrations
 # so that Alembic can detect them

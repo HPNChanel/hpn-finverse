@@ -1,6 +1,6 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode } from 'react';
 import { useStakingAuth } from '@/hooks/useStakingAuth';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { 
   TrendingUp, 
@@ -10,7 +10,10 @@ import {
   Coins,
   Shield,
   Award,
-  Users
+  Users,
+  Loader2,
+  AlertTriangle,
+  ArrowUpDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -26,6 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { ErrorHandler } from '@/utils/errorHandler';
+import { extractErrorMessage } from '@/utils/errorHelpers';
 
 interface StakingLayoutProps {
   children: ReactNode;
@@ -48,28 +52,67 @@ const stakingNavigation = [
     name: 'Analytics', 
     href: '/staking/analytics', 
     icon: BarChart3,
-    description: 'Global staking statistics'
+    description: 'Performance insights and reward timeline'
+  },
+  { 
+    name: 'Transfer History', 
+    href: '/staking/transfer-history', 
+    icon: ArrowUpDown,
+    description: 'View your ETH transfer history'
   },
 ];
 
+// Add a wrapper component for staking routes
+export function StakingRouteWrapper({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  
+  // Only apply StakingLayout to staking routes
+  if (location.pathname.startsWith('/staking')) {
+    return <StakingLayout>{children}</StakingLayout>;
+  }
+  
+  return <>{children}</>;
+}
+
 export function StakingLayout({ children }: StakingLayoutProps) {
-  const { user, logout, isLoading, isAuthenticated } = useStakingAuth();
-  const navigate = useNavigate();
+  const { user, isLoading, isAuthenticated, logout, error: authError } = useStakingAuth();
   const location = useLocation();
   const { toast } = useToast();
 
-  // Redirect unauthenticated users to staking login
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated && !location.pathname.includes('/staking/login')) {
-      navigate('/staking/login', { 
-        replace: true,
-        state: { 
-          from: location.pathname,
-          message: 'Please log in to access staking features'
-        }
-      });
-    }
-  }, [isAuthenticated, isLoading, navigate, location.pathname]);
+  // Add loading state for auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading staking interface...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Add error boundary for auth errors
+  if (authError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="max-w-md mx-auto p-6">
+          <div className="text-center">
+            <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2">Authentication Error</h2>
+            <p className="text-muted-foreground mb-4">{extractErrorMessage(authError)}</p>
+            <Button onClick={() => window.location.reload()} variant="outline">
+              Retry
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Don't render content if user is not authenticated or user is null
+  if (!isAuthenticated || !user) {
+    return null;
+  }
 
   const getUserInitials = (name: string) => {
     return name
@@ -95,31 +138,11 @@ export function StakingLayout({ children }: StakingLayoutProps) {
     }
   };
 
-  // Show loading state while checking authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex items-center justify-center">
-        <Card className="p-8 text-center">
-          <div className="flex items-center justify-center mb-4">
-            <TrendingUp className="w-8 h-8 animate-pulse text-blue-600" />
-          </div>
-          <h2 className="text-xl font-semibold mb-2">Loading Staking Platform</h2>
-          <p className="text-muted-foreground">Please wait while we prepare your staking experience...</p>
-        </Card>
-      </div>
-    );
-  }
-
-  // Don't render content if user is not authenticated
-  if (!isAuthenticated) {
-    return null;
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
-      {/* Staking Header */}
+    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-green-50">
+      {/* Single Staking Header */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Left side - Brand and navigation */}
             <div className="flex items-center gap-4">
@@ -135,7 +158,7 @@ export function StakingLayout({ children }: StakingLayoutProps) {
                   <Coins className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-bold text-gray-900">FVT Staking</h1>
+                  <h1 className="text-lg font-bold text-gray-900">ETH Staking</h1>
                   <p className="text-xs text-gray-600">Decentralized Finance</p>
                 </div>
               </div>
@@ -224,10 +247,10 @@ export function StakingLayout({ children }: StakingLayoutProps) {
         </div>
       </header>
 
-      {/* Main Staking Content */}
-      <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Staking Info Banner */}
+      {/* Main Staking Content - Single instance */}
+      <main className="flex-1 pb-6">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          {/* Single Staking Info Banner */}
           <div className="mb-6 p-4 bg-gradient-to-r from-blue-500/10 to-green-500/10 border border-blue-200/50 rounded-lg">
             <div className="flex items-center gap-3">
               <Shield className="w-5 h-5 text-blue-600" />
@@ -240,7 +263,7 @@ export function StakingLayout({ children }: StakingLayoutProps) {
             </div>
           </div>
 
-          {/* Mobile Navigation */}
+          {/* Mobile Navigation - Single instance */}
           <div className="md:hidden mb-6">
             <div className="flex gap-2 overflow-x-auto pb-2">
               {stakingNavigation.map((item) => {
@@ -266,14 +289,16 @@ export function StakingLayout({ children }: StakingLayoutProps) {
             </div>
           </div>
 
-          {/* Main Content */}
-          {children}
+          {/* Main Content - Single rendering */}
+          <div className="w-full">
+            {children}
+          </div>
         </div>
       </main>
 
-      {/* Footer */}
+      {/* Footer - Single instance */}
       <footer className="bg-white/50 backdrop-blur-sm border-t border-gray-200 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Coins className="w-4 h-4" />

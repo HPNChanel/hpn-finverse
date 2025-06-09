@@ -1,634 +1,280 @@
-import { ContractInfo } from '@/types/contracts';
-import { ethers } from 'ethers';
+import { ContractInfo, ContractStakingSummary, ContractStakePosition } from '@/types/contracts';
+import { Contract, formatEther, formatUnits } from 'ethers';
 import axios from 'axios';
+import { getStakeVaultAddress } from '@/utils/contractLoader';
 
-// ERC20 ABI (minimal required functions)
+// Import web3Provider from the correct location
+export { web3Provider } from './web3Provider';
+
+// DEPRECATED: ERC20 ABI is no longer used for ETH-only staking
+// Keeping minimal version for potential future token support
 export const ERC20_ABI = [
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)",
-  "function totalSupply() view returns (uint256)",
   "function balanceOf(address owner) view returns (uint256)",
-  "function transfer(address to, uint256 amount) returns (bool)",
-  "function approve(address spender, uint256 amount) returns (bool)",
-  "function allowance(address owner, address spender) view returns (uint256)",
-  "function transferFrom(address from, address to, uint256 amount) returns (bool)",
-  "event Transfer(address indexed from, address indexed to, uint256 value)",
-  "event Approval(address indexed owner, address indexed spender, uint256 value)"
-];
+] as const;
 
-// Supported Token Addresses
+// Complete ABI for StakeVault contract
+export const STAKE_VAULT_ABI = [
+  // Staking functions
+  "function stake(uint256 amount)",
+  "function stakeToPool(uint256 poolId, uint256 amount) payable",
+  "function unstake(uint256 stakeIndex)",
+  "function claim(uint256 stakeIndex)",
+
+  // View functions - User stakes (FIXED: Remove problematic getUserStakes)
+  "function getUserStake(address user, uint256 stakeIndex) view returns (tuple(uint256 amount, uint256 timestamp, bool claimed, address tokenAddress, uint256 poolId))",
+  "function getUserStakeCount(address user) view returns (uint256)",
+  "function getUserStakeIds(address user) view returns (uint256[])",
+  "function getUserStakesDetails(address user, uint256[] stakeIndexes) view returns (uint256[] amounts, uint256[] timestamps, bool[] claimed, uint256[] rewards, bool[] canUnstakeStatus)",
+
+  // View functions - Rewards and validation
+  "function getPendingReward(address user, uint256 stakeIndex) view returns (uint256)",
+  "function canUnstake(address user, uint256 stakeIndex) view returns (bool)",
+  "function calculateReward(uint256 amount, uint256 stakeTimestamp) view returns (uint256)",
+  "function calculateReward(uint256 amount, uint256 stakeTimestamp, uint256 apy) view returns (uint256)",
+
+  // View functions - Totals and stats
+  "function getTotalStaked(address user) view returns (uint256)",
+  "function totalStakedAmount() view returns (uint256)",
+  "function totalStaked(address user, address token) view returns (uint256)",
+  "function totalStakedByToken(address token) view returns (uint256)",
+
+  // View functions - Pool information
+  "function stakingPools(uint256 poolId) view returns (tuple(address tokenAddress, uint256 minStake, uint256 maxStake, uint256 apy, bool isActive, string name))",
+  "function poolCount() view returns (uint256)",
+
+  // View functions - Constants
+  "function LOCK_PERIOD() view returns (uint256)",
+  "function APY_PERCENTAGE() view returns (uint256)",
+  "function stakingToken() view returns (address)",
+
+  // Admin functions
+  "function createPool(address tokenAddress, uint256 minStake, uint256 maxStake, uint256 apy, bool isActive, string name) returns (uint256)",
+  "function depositRewards(address tokenAddress, uint256 amount) payable",
+  "function depositRewards(uint256 amount)",
+  "function emergencyWithdraw(address tokenAddress, uint256 amount)",
+
+  // Events
+  "event Staked(address indexed user, uint256 amount, uint256 timestamp, uint256 stakeIndex, uint256 poolId, address tokenAddress)",
+  "event Claimed(address indexed user, uint256 reward, uint256 stakeIndex, address tokenAddress)",
+  "event Unstaked(address indexed user, uint256 amount, uint256 reward, uint256 stakeIndex, address tokenAddress)",
+  "event PoolCreated(uint256 indexed poolId, address indexed tokenAddress, string name, uint256 apy)"
+] as const;
+
+// DEPRECATED: Token address loading for ETH-only staking
+// Address loading handled dynamically through contractLoader
+
+// Supported Token Addresses - Updated for ETH-only
 export const SUPPORTED_TOKENS = {
-  FVT: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-  ETH: "0x0000000000000000000000000000000000000000" // Placeholder for ETH
+  ETH: "0x0000000000000000000000000000000000000000" // Special address for native ETH
 } as const;
 
-// Token Configuration
-export const TOKEN_CONFIG = {
-  FVT: {
-    name: "FinVerse Token",
-    symbol: "FVT",
-    decimals: 18,
-    isSupported: true,
-    minStake: 0.01,
-    maxStake: 1000000,
-    icon: "/icons/fvt.png"
-  },
-  ETH: {
+// Token metadata - ETH only
+export const TOKEN_METADATA = {
+  [SUPPORTED_TOKENS.ETH]: {
+    symbol: "ETH",
     name: "Ethereum",
-    symbol: "ETH", 
     decimals: 18,
-    isSupported: false, // Not yet supported
-    minStake: 0.001,
-    maxStake: 1000,
+    isNative: true,
     icon: "/icons/eth.png"
   }
 } as const;
 
-// Validation helper
-export const isTokenSupported = (tokenAddress: string): boolean => {
-  const normalizedAddress = tokenAddress.toLowerCase();
-  return Object.values(SUPPORTED_TOKENS).some(
-    addr => addr.toLowerCase() === normalizedAddress
-  ) && TOKEN_CONFIG.FVT.isSupported; // Only FVT is supported for now
-};
-
-// Get token info by address
-export const getTokenByAddress = (tokenAddress: string) => {
-  const normalizedAddress = tokenAddress.toLowerCase();
-  
-  if (normalizedAddress === SUPPORTED_TOKENS.FVT.toLowerCase()) {
-    return { address: SUPPORTED_TOKENS.FVT, ...TOKEN_CONFIG.FVT };
-  }
-  
-  if (normalizedAddress === SUPPORTED_TOKENS.ETH.toLowerCase()) {
-    return { address: SUPPORTED_TOKENS.ETH, ...TOKEN_CONFIG.ETH };
-  }
-  
-  return null;
-};
-
-// Contract ABIs for StakeVault and MockERC20
-export const STAKE_VAULT_ABI = [
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_stakingToken",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "constructor"
-  },
-  {
-    "inputs": [],
-    "name": "APY_PERCENTAGE",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "LOCK_PERIOD",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "stakeTimestamp",
-        "type": "uint256"
-      }
-    ],
-    "name": "calculateReward",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "canUnstake",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "claim",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "getPendingReward",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "getUserStake",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "amount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "timestamp",
-            "type": "uint256"
-          },
-          {
-            "internalType": "bool",
-            "name": "claimed",
-            "type": "bool"
-          }
-        ],
-        "internalType": "struct StakeVault.Stake",
-        "name": "",
-        "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      }
-    ],
-    "name": "getUserStakeCount",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      }
-    ],
-    "name": "stake",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "stakingToken",
-    "outputs": [
-      {
-        "internalType": "contract IERC20",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "totalStaked",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "unstake",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      }
-    ],
-    "name": "getUserStakeIds",
-    "outputs": [
-      {
-        "internalType": "uint256[]",
-        "name": "",
-        "type": "uint256[]"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "stakeIndexes",
-        "type": "uint256[]"
-      }
-    ],
-    "name": "getUserStakesDetails",
-    "outputs": [
-      {
-        "internalType": "uint256[]",
-        "name": "amounts",
-        "type": "uint256[]"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "timestamps",
-        "type": "uint256[]"
-      },
-      {
-        "internalType": "bool[]",
-        "name": "claimed",
-        "type": "bool[]"
-      },
-      {
-        "internalType": "uint256[]",
-        "name": "rewards",
-        "type": "uint256[]"
-      },
-      {
-        "internalType": "bool[]",
-        "name": "canUnstakeStatus",
-        "type": "bool[]"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "timestamp",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "Staked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "reward",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "Unstaked",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "reward",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "stakeIndex",
-        "type": "uint256"
-      }
-    ],
-    "name": "Claimed",
-    "type": "event"
-  }
-] as const;
-
-// Add fallback contracts and missing functions
+// Fallback contract addresses - Updated for ETH-only staking
 export const FALLBACK_CONTRACTS = {
-  MockERC20: {
-    address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-    name: "FinVerse Token",
-    symbol: "FVT",
-    decimals: 18
-  },
   StakeVault: {
-    address: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-    stakingToken: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-    lockPeriod: "2592000",
-    apy: "10"
+    address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    description: "ETH-only staking contract with multiple pools",
+    lockPeriod: "2592000", // 30 days in seconds
+    defaultPools: [
+      {
+        id: 0,
+        name: "ETH Flexible Pool",
+        apy: "8"
+      },
+      {
+        id: 1,
+        name: "ETH Premium Pool", 
+        apy: "12"
+      }
+    ]
   }
 };
 
-// Load contract information from deployed contracts or use fallback
+// Load contract info from public/contracts/contracts.json
 export const loadContractInfo = async (): Promise<ContractInfo | null> => {
   try {
-    // Try to load from a contracts.json file or API endpoint
-    const response = await fetch('/contracts.json');
-    if (response.ok) {
-      const contractInfo = await response.json();
-      return contractInfo;
-    }
+    const response = await axios.get('/contracts/contracts.json');
+    return response.data;
   } catch (error) {
-    console.warn('Could not load contract info from external source:', error);
+    console.warn('Failed to load contract info from /contracts/contracts.json:', error);
+    return null;
   }
-
-  // Return fallback contract info
-  return {
-    contracts: FALLBACK_CONTRACTS,
-    timestamp: new Date().toISOString(),
-    network: 'hardhat-local',
-    deployer: 'fallback'
-  };
 };
 
-// Utility function to load staking positions directly from contract
+// Enhanced contract interaction with comprehensive error handling
 export const loadUserStakesFromContract = async (userAddress: string): Promise<ContractStakingSummary> => {
   try {
-    if (!window.ethereum || !userAddress) {
-      return createEmptyStakingSummary(userAddress);
-    }
-
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    const contractInfo = await loadContractInfo();
+    console.log('🔗 Loading user stakes from contract for:', userAddress);
     
-    if (!contractInfo?.contracts?.StakeVault?.address) {
-      console.warn('StakeVault contract address not found, using fallback');
-      return createEmptyStakingSummary(userAddress);
+    // Get provider from web3Provider
+    const { web3Provider } = await import('./web3Provider');
+    const provider = web3Provider.getProvider();
+    
+    if (!provider) {
+      throw new Error('Web3 provider not available');
     }
 
-    const vaultContract = new ethers.Contract(
+    // Load contract info
+    let contractInfo;
+    try {
+      contractInfo = await loadContractInfo();
+    } catch (loadError) {
+      console.warn('Using fallback contract addresses');
+      contractInfo = { contracts: FALLBACK_CONTRACTS };
+    }
+
+    if (!contractInfo?.contracts?.StakeVault?.address) {
+      throw new Error('StakeVault contract address not found');
+    }
+
+    const vaultContract = new Contract(
       contractInfo.contracts.StakeVault.address,
       STAKE_VAULT_ABI,
       provider
     );
 
-    // Get user's total staked amount and stake count
-    const [totalStaked, stakeCount] = await Promise.all([
-      vaultContract.totalStaked(userAddress),
-      vaultContract.getUserStakeCount(userAddress)
-    ]);
-
+    // Get user stake count
+    const stakeCount = await vaultContract.getUserStakeCount(userAddress);
     const stakeCountNum = Number(stakeCount);
-    
+
     if (stakeCountNum === 0) {
-      return createEmptyStakingSummary(userAddress);
+      return {
+        userAddress,
+        totalStaked: '0',
+        totalStakedFormatted: '0',
+        stakeCount: 0,
+        positions: [],
+        totalRewards: '0',
+        totalRewardsFormatted: '0',
+        totalClaimable: '0',
+        totalClaimableFormatted: '0',
+        lastUpdated: Date.now(),
+        activeStakeCount: 0,
+        canClaimAny: false
+      };
     }
 
     // Get all stake IDs
     const stakeIds = await vaultContract.getUserStakeIds(userAddress);
     
-    // Get detailed information for all stakes in one call
-    const [amounts, timestamps, claimed, rewards, canUnstakeStatus] = 
-      await vaultContract.getUserStakesDetails(userAddress, stakeIds);
-
-    // Get contract constants
-    const [apy, lockPeriod] = await Promise.all([
-      vaultContract.APY_PERCENTAGE(),
-      vaultContract.LOCK_PERIOD()
-    ]);
-
-    const apyNumber = Number(apy);
-    const lockPeriodSeconds = Number(lockPeriod);
-    const lockPeriodDays = Math.floor(lockPeriodSeconds / (24 * 60 * 60));
-
-    // Process stakes into positions
     const positions: ContractStakePosition[] = [];
-    let totalRewardsSum = 0;
-    let totalClaimableSum = 0;
+    let totalStaked = 0;
+    let totalRewards = 0;
+    let totalClaimable = 0;
 
+    // Process each stake
     for (let i = 0; i < stakeCountNum; i++) {
-      const amount = amounts[i];
-      const timestamp = Number(timestamps[i]);
-      const reward = rewards[i];
-      
-      // Skip stakes with 0 amount (withdrawn stakes)
-      if (amount === 0n) continue;
+      try {
+        const stakeId = Number(stakeIds[i]);
+        const stakeInfo = await vaultContract.getUserStake(userAddress, stakeId);
+        const pendingReward = await vaultContract.getPendingReward(userAddress, stakeId);
+        const canUnstake = await vaultContract.canUnstake(userAddress, stakeId);
 
-      const amountFormatted = ethers.formatEther(amount);
-      const rewardFormatted = ethers.formatEther(reward);
-      const startDate = new Date(timestamp * 1000);
-      
-      // Calculate days remaining
-      const unlockTime = timestamp + lockPeriodSeconds;
-      const currentTime = Math.floor(Date.now() / 1000);
-      const daysRemaining = Math.max(0, Math.ceil((unlockTime - currentTime) / (24 * 60 * 60)));
-      const isUnlocked = currentTime >= unlockTime;
+        const amount = stakeInfo[0];
+        const timestamp = Number(stakeInfo[1]);
+        const claimed = stakeInfo[2];
+        const poolId = Number(stakeInfo[4]);
 
-      const position: ContractStakePosition = {
-        stakeIndex: Number(stakeIds[i]),
-        amount: amountFormatted,
-        amountFormatted: parseFloat(amountFormatted).toFixed(4),
-        timestamp,
-        startDate,
-        claimed: claimed[i],
-        reward: rewardFormatted,
-        rewardFormatted: parseFloat(rewardFormatted).toFixed(6),
-        canUnstake: canUnstakeStatus[i],
-        apy: apyNumber,
-        lockPeriod: lockPeriodSeconds,
-        lockPeriodDays,
-        daysRemaining,
-        isUnlocked
-      };
+        const amountFormatted = formatEther(amount);
+        const rewardFormatted = formatEther(pendingReward);
 
-      positions.push(position);
-      
-      const rewardAmount = parseFloat(rewardFormatted);
-      totalRewardsSum += rewardAmount;
-      
-      if (!claimed[i] && rewardAmount > 0) {
-        totalClaimableSum += rewardAmount;
+        const position: ContractStakePosition = {
+          stakeIndex: stakeId,
+          amount: amount.toString(),
+          amountFormatted,
+          timestamp,
+          startDate: new Date(timestamp * 1000),
+          claimed,
+          reward: pendingReward.toString(),
+          rewardFormatted,
+          canUnstake,
+          apy: 10, // Default APY - should be fetched from pool info
+          lockPeriod: 30 * 24 * 60 * 60, // 30 days in seconds
+          lockPeriodDays: 30,
+          daysRemaining: Math.max(0, 30 - Math.floor((Date.now() - timestamp * 1000) / (1000 * 60 * 60 * 24))),
+          isUnlocked: canUnstake,
+          tokenAddress: SUPPORTED_TOKENS.ETH,
+          tokenSymbol: 'ETH',
+          isNativeToken: true,
+          pendingReward: rewardFormatted,
+          isActive: !claimed
+        };
+
+        positions.push(position);
+        totalStaked += parseFloat(amountFormatted);
+        totalRewards += parseFloat(rewardFormatted);
+        
+        if (canUnstake && !claimed) {
+          totalClaimable += parseFloat(rewardFormatted);
+        }
+      } catch (stakeError) {
+        console.error(`Error processing stake ${i}:`, stakeError);
       }
     }
 
     return {
       userAddress,
-      totalStaked: ethers.formatEther(totalStaked),
-      totalStakedFormatted: parseFloat(ethers.formatEther(totalStaked)).toFixed(4),
-      stakeCount: positions.length, // Use filtered count
+      totalStaked: totalStaked.toString(),
+      totalStakedFormatted: totalStaked.toFixed(6),
+      stakeCount: positions.length,
       positions,
-      totalRewards: totalRewardsSum.toString(),
-      totalRewardsFormatted: totalRewardsSum.toFixed(6),
-      totalClaimable: totalClaimableSum.toString(),
-      totalClaimableFormatted: totalClaimableSum.toFixed(6),
-      lastUpdated: Date.now()
+      totalRewards: totalRewards.toString(),
+      totalRewardsFormatted: totalRewards.toFixed(6),
+      totalClaimable: totalClaimable.toString(),
+      totalClaimableFormatted: totalClaimable.toFixed(6),
+      lastUpdated: Date.now(),
+      activeStakeCount: positions.filter(p => p.isActive).length,
+      canClaimAny: totalClaimable > 0
     };
 
   } catch (error) {
-    console.error('Failed to load stakes from contract:', error);
-    return createEmptyStakingSummary(userAddress);
+    console.error('❌ Error loading user stakes from contract:', error);
+    
+    // Return empty summary on error
+    return {
+      userAddress,
+      totalStaked: '0',
+      totalStakedFormatted: '0',
+      stakeCount: 0,
+      positions: [],
+      totalRewards: '0',
+      totalRewardsFormatted: '0',
+      totalClaimable: '0',
+      totalClaimableFormatted: '0',
+      lastUpdated: Date.now(),
+      activeStakeCount: 0,
+      canClaimAny: false
+    };
   }
 };
 
-// Helper function to create empty summary
-const createEmptyStakingSummary = (userAddress: string): ContractStakingSummary => ({
-  userAddress: userAddress || '',
-  totalStaked: '0',
-  totalStakedFormatted: '0.0000',
-  stakeCount: 0,
-  positions: [],
-  totalRewards: '0',
-  totalRewardsFormatted: '0.000000',
-  totalClaimable: '0',
-  totalClaimableFormatted: '0.000000',
-  lastUpdated: Date.now()
-});
+// Utility functions for ETH formatting
+export const formatTokenAmount = (amount: string | number | bigint, decimals: number = 18): string => {
+  try {
+    if (typeof amount === 'bigint') {
+      return formatUnits(amount, decimals);
+    }
+    
+    if (typeof amount === 'string') {
+      return formatUnits(amount, decimals);
+    }
+    
+    return amount.toString();
+  } catch (error) {
+    console.error('Error formatting token amount:', error);
+    return '0';
+  }
+};

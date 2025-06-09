@@ -20,7 +20,11 @@ from app.schemas.staking import (
     StakeBase, StakeCreate, StakeResponse, StakeStatus,
     StakingAccountCreate, StakingAccountResponse, StakingAccountList,
     StakingProfileResponse, StakingProfileList,
-    StakingPoolsResponse, RewardsResponse, StakingPositionCreateResponse
+    StakingPoolsResponse, RewardsResponse, StakingPositionCreateResponse,
+    UserStakesResponse, StakingPositionResponse, StakingRecordRequest, 
+    StakingRecordResponse, StakingPositionCreateRequest, RecordStakeRequest,
+    RecordStakeResponse, StakingPoolInfo, RewardHistory, ClaimableRewards,
+    ClaimRewardsResponse, StakeWithPool, StakingDashboard
 )
 from app.schemas.financial_account import (
     FinancialAccountCreate, 
@@ -67,11 +71,15 @@ __all__ = [
     # Transaction schemas
     "TransactionBase", "CreateTransactionSchema", "UpdateTransactionSchema", 
     "TransactionResponse", "TransactionList", "MonthlyStats", "MonthlyStatsResponse",
-    # Staking schemas
+    # Staking schemas - Updated with all missing schemas
     "StakeBase", "StakeCreate", "StakeResponse", "StakeStatus",
     "StakingAccountCreate", "StakingAccountResponse", "StakingAccountList",
     "StakingProfileResponse", "StakingProfileList",
     "StakingPoolsResponse", "RewardsResponse", "StakingPositionCreateResponse",
+    "UserStakesResponse", "StakingPositionResponse", "StakingRecordRequest",
+    "StakingRecordResponse", "StakingPositionCreateRequest", "RecordStakeRequest",
+    "RecordStakeResponse", "StakingPoolInfo", "RewardHistory", "ClaimableRewards",
+    "ClaimRewardsResponse", "StakeWithPool", "StakingDashboard",
     # Financial account schemas
     "FinancialAccountCreate", "FinancialAccountUpdate", "FinancialAccountResponse", "FinancialAccountList",  # Added FinancialAccountUpdate
     "AccountType", "TopUpRequest", "AccountSummary", "ToggleVisibilityRequest",
@@ -108,6 +116,9 @@ SCHEMA_REGISTRY = {
     "budget_create": BudgetCreate,
     "category_create": CategoryCreate,
     "stake_create": StakeCreate,
+    "stake_with_pool": StakeWithPool,
+    "staking_position_create": StakingPositionCreateRequest,
+    "staking_record": StakingRecordRequest,
     
     # Response schemas
     "user_response": UserResponse,
@@ -117,6 +128,9 @@ SCHEMA_REGISTRY = {
     "budget_response": BudgetResponse,
     "category_response": CategoryResponse,
     "stake_response": StakeResponse,
+    "staking_pools_response": StakingPoolsResponse,
+    "rewards_response": RewardsResponse,
+    "staking_dashboard": StakingDashboard,
 }
 
 # Validation Layer Configuration

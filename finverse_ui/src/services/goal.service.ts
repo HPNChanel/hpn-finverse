@@ -2,22 +2,35 @@ import api from '@/lib/api';
 
 export interface Goal {
   id: number;
+  user_id: number;
+  account_id?: number;
   name: string;
   target_amount: number;
   current_amount: number;
+  start_date: string;
   target_date: string;
   description?: string;
-  category?: string;
-  progress_percentage: number;
+  priority: number;
   status: number;
+  icon?: string;
+  color?: string;
+  progress_percentage: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreateGoalRequest {
   name: string;
   target_amount: number;
+  current_amount?: number;
+  start_date: string;
   target_date: string;
   description?: string;
-  category?: string;
+  priority?: number;
+  status?: number;
+  icon?: string;
+  color?: string;
+  account_id?: number;
 }
 
 class GoalService {

@@ -26,6 +26,7 @@ from .financial_goal import router as financial_goal_router
 from .staking import router as staking_router
 from .category import router as category_router  # Singular naming
 from .budget import router as budget_router  # Unified budget router
+from .settings import router as settings_router  # Settings router
 
 # Import optional routers with error handling
 try:
@@ -62,6 +63,7 @@ __all__ = [
     "staking_router",
     "category_router",
     "budget_router",
+    "settings_router",
 ]
 
 # Add optional routers to exports if they exist
@@ -87,6 +89,7 @@ routers = [
     staking_router,
     category_router,
     budget_router,
+    settings_router,
 ]
 
 # Add optional routers if they exist

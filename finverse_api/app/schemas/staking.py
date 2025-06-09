@@ -56,6 +56,7 @@ class StakeCreate(StakeBase):
     """Schema for creating a unified stake"""
     tx_hash: Optional[str] = Field(None, max_length=100, description="Blockchain transaction hash", alias="txHash")
     reward_rate: Optional[float] = Field(default=0.0, ge=0, le=100, description="Annual reward rate percentage", alias="rewardRate")
+    token_address: Optional[str] = Field(None, description="Token contract address (0x0 for ETH)", alias="tokenAddress")
     
     @field_validator("tx_hash")
     @classmethod
@@ -64,6 +65,15 @@ class StakeCreate(StakeBase):
         if v is not None:
             if not isinstance(v, str) or not v.startswith('0x') or len(v) != 66:
                 raise ValueError('Transaction hash must be a valid Ethereum transaction hash (0x + 64 hex chars)')
+        return v
+    
+    @field_validator("token_address")
+    @classmethod
+    def validate_token_address(cls, v):
+        """Validate token address format"""
+        if v is not None:
+            if not isinstance(v, str) or not v.startswith('0x') or len(v) != 42:
+                raise ValueError('Token address must be a valid Ethereum address (0x + 40 hex chars)')
         return v
 
 
@@ -90,6 +100,7 @@ class StakeResponse(BaseModel):
     amount: float = Field(..., description="Staked amount")
     staked_at: str = Field(..., description="Stake creation time", alias="stakedAt")  # Changed to string
     unlock_at: Optional[str] = Field(None, description="Unlock time", alias="unlockAt")  # Changed to string
+    unstaked_at: Optional[str] = Field(None, description="Unstake time", alias="unstakedAt")  # Changed to string
     lock_period: int = Field(..., description="Lock period in days", alias="lockPeriod")
     reward_rate: float = Field(..., description="Reward rate percentage", alias="rewardRate")
     apy_snapshot: Optional[float] = Field(None, description="APY at staking time", alias="apySnapshot")
@@ -97,6 +108,8 @@ class StakeResponse(BaseModel):
     rewards_earned: float = Field(..., description="Total rewards earned", alias="rewardsEarned")
     predicted_reward: Optional[float] = Field(None, description="ML predicted reward", alias="predictedReward")
     tx_hash: Optional[str] = Field(None, description="Transaction hash", alias="txHash")
+    unstake_tx_hash: Optional[str] = Field(None, description="Unstake transaction hash", alias="unstakeTxHash")
+    token_address: Optional[str] = Field(None, description="Token contract address", alias="tokenAddress")
     is_active: bool = Field(..., description="Whether stake is active", alias="isActive")
     status: str = Field(..., description="Stake status")
     model_confidence: Optional[float] = Field(None, description="AI model confidence", alias="modelConfidence")
@@ -108,7 +121,7 @@ class StakeResponse(BaseModel):
     is_unlocked: bool = Field(default=False, description="Whether stake is unlocked", alias="isUnlocked")
     days_remaining: Optional[int] = Field(None, description="Days until unlock", alias="daysRemaining")
     
-    @field_validator('staked_at', 'unlock_at', 'created_at', 'updated_at', mode='before')
+    @field_validator('staked_at', 'unlock_at', 'unstaked_at', 'created_at', 'updated_at', mode='before')
     @classmethod
     def validate_datetime_fields(cls, v):
         """Convert datetime to ISO string"""
@@ -202,7 +215,7 @@ class StakingPoolList(BaseModel):
 
 class StakingPoolInfo(BaseModel):
     """Schema for detailed staking pool information"""
-    id: int = Field(..., description="Pool ID")
+    pool_id: str = Field(..., description="Pool ID", alias="poolId")
     name: str = Field(..., description="Pool name")
     description: str = Field(..., description="Pool description")
     apy: float = Field(..., description="Annual Percentage Yield")
@@ -210,14 +223,27 @@ class StakingPoolInfo(BaseModel):
     max_stake: float = Field(..., description="Maximum stake amount", alias="maxStake")
     lock_period: int = Field(..., description="Lock period in days", alias="lockPeriod")
     is_active: bool = Field(..., description="Whether pool is active", alias="isActive")
-    total_staked: float = Field(..., description="Total amount staked in pool", alias="totalStaked")
-    participants: int = Field(..., description="Number of participants")
-    created_at: datetime = Field(..., description="Pool creation time", alias="createdAt")
-    updated_at: datetime = Field(..., description="Pool last update time", alias="updatedAt")
+    total_staked: float = Field(default=0.0, description="Total amount staked in pool", alias="totalStaked")
+    participants: int = Field(default=0, description="Number of participants")
+    token_address: Optional[str] = Field(None, description="Token contract address", alias="tokenAddress")
+    token_symbol: Optional[str] = Field(None, description="Token symbol", alias="tokenSymbol")
+    created_at: Optional[str] = Field(default=None, description="Pool creation time", alias="createdAt")
+    updated_at: Optional[str] = Field(default=None, description="Pool last update time", alias="updatedAt")
+    
+    @field_validator('created_at', 'updated_at', mode='before')
+    @classmethod
+    def validate_datetime_fields(cls, v):
+        """Convert datetime to ISO string or provide default"""
+        if v is None:
+            return datetime.utcnow().isoformat()
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
     
     model_config = ConfigDict(
         from_attributes=True,
-        populate_by_name=True
+        populate_by_name=True,
+        extra='ignore'  # Ignore extra fields to prevent validation errors
     )
 
 
@@ -256,177 +282,212 @@ class ClaimableRewards(BaseModel):
 
 
 class ClaimRewardsResponse(BaseModel):
-    """Schema for claim rewards response"""
-    claimed_amount: float
-    message: str
-
-
-class StakeWithPool(StakeBase):
-    """Schema for stake with pool information"""
-    pool_id: Optional[int] = 1
-    duration_days: Optional[int] = 0
-
-
-class StakingDashboard(BaseModel):
-    """Schema for staking dashboard data"""
-    total_staked: float
-    total_earned: float
-    active_stakes: int
-    average_apy: float
-    claimable_rewards: float
-    stakes: List[StakingProfileResponse]
-    pools: List[StakingPool]
-    recent_rewards: List[RewardHistory]
-
-
-# Updated Position Schemas for Unified Model
-class StakingPositionResponse(StakeResponse):
-    """Alias for StakeResponse to maintain backward compatibility"""
-    unlock_date: Optional[datetime] = Field(None, description="Unlock date (alias)", alias="unlockDate")
-    last_reward_calculation: Optional[datetime] = Field(None, description="Last reward calc", alias="lastRewardCalculation")
-    
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
-
-class UserStakesResponse(BaseModel):
-    """Response for user's unified staking positions"""
-    positions: List[StakingPositionResponse]
-    total_staked: float = Field(..., description="Total staked amount", alias="totalStaked")
-    total_rewards: float = Field(..., description="Total rewards", alias="totalRewards")
-    active_positions: int = Field(..., description="Active positions count", alias="activePositions")
-    total_positions: int = Field(..., description="Total positions count", alias="totalPositions")
-    
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
-
-class StakingRecordRequest(BaseModel):
-    """Request schema for recording a unified stake"""
-    pool_id: str = Field(..., description="Pool identifier", alias="poolId")
-    amount: float = Field(..., gt=0, description="Stake amount")
-    tx_hash: Optional[str] = Field(None, description="Transaction hash", alias="txHash")
-    lock_period: int = Field(default=30, ge=0, description="Lock period in days", alias="lockPeriod")
-    wallet_address: Optional[str] = Field(None, description="Wallet address", alias="walletAddress")
-    
-    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
-    
-    @field_validator('amount')
-    @classmethod
-    def validate_amount(cls, v):
-        try:
-            min_amount = MIN_STAKE_AMOUNT
-            max_amount = MAX_STAKE_AMOUNT
-        except:
-            min_amount = 0.01
-            max_amount = 1000000.0
-            
-        if v < min_amount:
-            raise ValueError(f'Amount must be at least {min_amount}')
-        if v > max_amount:
-            raise ValueError(f'Amount cannot exceed {max_amount}')
-        return v
-    
-    @field_validator('tx_hash')
-    @classmethod
-    def validate_tx_hash(cls, v):
-        if v is not None:
-            if not isinstance(v, str) or not v.startswith('0x') or len(v) != 66:
-                raise ValueError('Transaction hash must be a valid Ethereum transaction hash (0x + 64 hex chars)')
-        return v
-    
-    @field_validator('wallet_address')
-    @classmethod
-    def validate_wallet_address(cls, v):
-        if v is not None:
-            if not isinstance(v, str) or not v.startswith('0x') or len(v) != 42:
-                raise ValueError('Wallet address must be a valid Ethereum address (0x + 40 hex chars)')
-        return v
-
-
-class StakingRecordResponse(BaseModel):
-    """Response after recording a unified stake"""
+    """Response for claiming rewards"""
     success: bool
     message: str
-    position: Optional[StakingPositionResponse] = None
-    position_id: Optional[int] = Field(None, description="Position ID", alias="positionId")
-    stake_id: Optional[int] = Field(None, description="Unified stake ID", alias="stakeId")
-    tx_hash: Optional[str] = Field(None, description="Transaction hash", alias="txHash")
-    blockchain_confirmed: bool = Field(default=True, description="Blockchain confirmation", alias="blockchainConfirmed")
+    claimed_amount: float
+    transaction_hash: Optional[str] = None
+    remaining_claimable: float
     
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-
-
-class StakingPositionCreateRequest(BaseModel):
-    """Schema for creating a staking position via positions endpoint"""
-    wallet_address: str = Field(..., min_length=42, max_length=42, description="Ethereum wallet address", alias="walletAddress")
-    pool_id: int = Field(..., gt=0, description="Pool ID for staking", alias="poolId")
-    amount: float = Field(..., gt=0, description="Amount to stake")
-    blockchain_tx_hash: str = Field(..., min_length=66, max_length=66, description="Blockchain transaction hash", alias="blockchainTxHash")
-    
-    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
-    
-    @field_validator('wallet_address')
-    @classmethod
-    def validate_wallet_address(cls, v):
-        if not v.startswith('0x') or len(v) != 42:
-            raise ValueError('Wallet address must be a valid Ethereum address (0x + 40 hex chars)')
-        return v.lower()
-    
-    @field_validator('blockchain_tx_hash')
-    @classmethod
-    def validate_blockchain_tx_hash(cls, v):
-        if not v.startswith('0x') or len(v) != 66:
-            raise ValueError('Transaction hash must be a valid Ethereum transaction hash (0x + 64 hex chars)')
-        return v.lower()
-    
-    @field_validator('amount')
-    @classmethod
-    def validate_amount(cls, v):
-        try:
-            min_amount = MIN_STAKE_AMOUNT
-            max_amount = MAX_STAKE_AMOUNT
-        except:
-            min_amount = 0.01
-            max_amount = 1000000.0
-            
-        if v < min_amount:
-            raise ValueError(f'Amount must be at least {min_amount}')
-        if v > max_amount:
-            raise ValueError(f'Amount cannot exceed {max_amount}')
-        return v
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StakingPoolsResponse(BaseModel):
-    """Response schema for staking pools"""
+    """Response for staking pools list"""
     pools: List[StakingPoolInfo]
-    total_pools: int = Field(..., description="Total number of pools", alias="totalPools")
-    active_pools: int = Field(..., description="Active pools count", alias="activePools")
+    total_pools: int = Field(..., description="Total number of pools")
+    active_pools: int = Field(..., description="Number of active pools")
     
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RewardsResponse(BaseModel):
-    """Response schema for staking rewards"""
-    rewards: List[RewardHistory]
-    total_rewards: float = Field(..., description="Total rewards earned", alias="totalRewards")
-    pending_rewards: float = Field(..., description="Pending rewards", alias="pendingRewards")
-    last_calculation: Optional[datetime] = Field(None, description="Last calculation time", alias="lastCalculation")
+    """Response for user rewards"""
+    rewards: List[RewardHistory] = Field(default=[], description="Detailed rewards history")
+    total_rewards: float = Field(..., description="Total rewards earned")
+    pending_rewards: float = Field(..., description="Pending claimable rewards")
+    last_calculation: Optional[datetime] = Field(None, description="Last calculation timestamp")
     
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StakeWithPool(StakeBase):
+    """Schema for staking to a specific pool with duration"""
+    pool_id: int = Field(..., description="Pool ID to stake to")
+    duration: int = Field(default=30, ge=0, description="Stake duration in days")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StakingDashboard(BaseModel):
+    """Schema for comprehensive staking dashboard data"""
+    total_staked: float = Field(..., description="Total amount staked")
+    total_earned: float = Field(..., description="Total rewards earned")
+    active_stakes: int = Field(..., description="Number of active stakes")
+    average_apy: float = Field(..., description="Average APY across all stakes")
+    claimable_rewards: float = Field(..., description="Total claimable rewards")
+    stakes: List[StakingProfileResponse] = Field(default=[], description="User stakes")
+    pools: List[StakingPoolInfo] = Field(default=[], description="Available pools")
+    recent_rewards: List[RewardHistory] = Field(default=[], description="Recent rewards history")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StakingPositionResponse(BaseModel):
+    """Response schema for staking position details"""
+    id: int = Field(..., description="Position ID")
+    user_id: int = Field(..., description="User ID")
+    pool_id: Optional[str] = Field(None, description="Pool ID")
+    amount: float = Field(..., description="Staked amount")
+    staked_at: datetime = Field(..., description="Stake creation timestamp")
+    lock_period: int = Field(default=0, description="Lock period in days")
+    reward_rate: float = Field(..., description="Reward rate (APY)")
+    tx_hash: Optional[str] = Field(None, description="Transaction hash")
+    is_active: bool = Field(..., description="Whether stake is active")
+    unlock_date: Optional[datetime] = Field(None, description="Unlock date")
+    rewards_earned: float = Field(default=0.0, description="Total rewards earned")
+    last_reward_calculation: Optional[datetime] = Field(None, description="Last reward calculation")
+    status: str = Field(..., description="Stake status")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    is_unlocked: bool = Field(..., description="Whether stake is unlocked")
+    days_remaining: Optional[int] = Field(None, description="Days until unlock")
+    reward_token: str = Field(default="FVT", description="Token symbol for rewards")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserStakesResponse(BaseModel):
+    """Response for user stakes summary"""
+    user_id: int = Field(..., description="User ID")
+    positions: List[StakingPositionResponse]
+    total_staked: float = Field(..., description="Total amount staked")
+    total_rewards: float = Field(..., description="Total rewards earned")
+    total_positions: int = Field(..., description="Total number of positions")
+    active_positions: int = Field(..., description="Number of active positions")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StakingPositionCreateRequest(BaseModel):
+    """Request to create a new staking position"""
+    wallet_address: str = Field(..., description="User wallet address")
+    pool_id: int = Field(..., description="Pool ID")
+    amount: float = Field(..., gt=0, description="Amount to stake")
+    blockchain_tx_hash: str = Field(..., description="Blockchain transaction hash")
+    
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StakingPositionCreateResponse(BaseModel):
-    """Response schema for creating a staking position"""
+    """Response for creating a staking position"""
     success: bool
     message: str
-    position_id: int = Field(..., description="Position ID", alias="positionId")
-    stake_id: int = Field(..., description="Unified stake ID", alias="stakeId")
-    wallet_address: str = Field(..., description="Wallet address", alias="walletAddress")
-    pool_id: int = Field(..., description="Pool ID", alias="poolId")
+    position_id: int = Field(..., description="Created position ID")
+    legacy_stake_id: int = Field(..., description="Legacy stake ID for compatibility")
+    wallet_address: str = Field(..., description="User wallet address")
+    pool_id: int = Field(..., description="Pool ID")
     amount: float = Field(..., description="Staked amount")
-    blockchain_tx_hash: str = Field(..., description="Transaction hash", alias="blockchainTxHash")
-    predicted_reward: Optional[float] = Field(None, description="Predicted reward", alias="predictedReward")
-    apy_snapshot: Optional[float] = Field(None, description="APY snapshot", alias="apySnapshot")
-    status: str = Field(default="ACTIVE", description="Stake status")
-    created_at: datetime = Field(..., description="Creation time", alias="createdAt")
+    blockchain_tx_hash: str = Field(..., description="Blockchain transaction hash")
+    predicted_reward: float = Field(..., description="Predicted annual reward")
+    apy_snapshot: float = Field(..., description="APY at time of creation")
+    status: str = Field(..., description="Position status")
+    created_at: datetime = Field(..., description="Creation timestamp")
     
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StakingRecordRequest(BaseModel):
+    """Request to record a stake"""
+    amount: float = Field(..., gt=0, description="Amount to stake")
+    poolId: str = Field(..., description="Pool ID")
+    lockPeriod: int = Field(default=0, ge=0, description="Lock period in days")
+    txHash: str = Field(..., description="Transaction hash")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StakingRecordResponse(BaseModel):
+    """Response after recording a stake"""
+    success: bool
+    message: str
+    position: Optional[StakingPositionResponse] = None
+    position_id: Optional[int] = Field(None, description="Position ID")
+    stake_id: Optional[int] = Field(None, description="Stake ID")
+    tx_hash: Optional[str] = Field(None, description="Transaction hash")
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RecordStakeRequest(BaseModel):
+    """Legacy request format for recording stakes"""
+    amount: float = Field(..., gt=0, description="Amount to stake")
+    poolId: str = Field(..., description="Pool ID")
+    lockPeriod: int = Field(default=0, ge=0, description="Lock period in days")
+    txHash: str = Field(..., min_length=66, max_length=66, description="Transaction hash")
+    
+    model_config = ConfigDict(from_attributes=True)
+    
+    @field_validator("txHash")
+    @classmethod
+    def validate_tx_hash(cls, v):
+        """Validate transaction hash format"""
+        if not isinstance(v, str) or not v.startswith('0x') or len(v) != 66:
+            raise ValueError('Transaction hash must be a valid Ethereum transaction hash (0x + 64 hex chars)')
+        # Check if the hex part is valid
+        try:
+            int(v[2:], 16)
+        except ValueError:
+            raise ValueError('Transaction hash contains invalid hexadecimal characters')
+        return v
+    
+    @field_validator("poolId")
+    @classmethod
+    def validate_pool_id(cls, v):
+        """Validate pool ID"""
+        if not v or not isinstance(v, str):
+            raise ValueError("Pool ID must be a non-empty string")
+        valid_pools = ['0', '1', '2']  # Define valid pool IDs for ETH staking
+        if v not in valid_pools:
+            raise ValueError(f"Invalid pool ID. Valid options: {valid_pools}")
+        return v
+
+
+class RecordStakeResponse(BaseModel):
+    """Legacy response format for recording stakes"""
+    success: bool
+    message: str
+    stakeId: int = Field(..., description="Stake ID")
+    txHash: str = Field(..., description="Transaction hash")
+    
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UnstakeSyncRequest(BaseModel):
+    """Request schema for unstaking synchronization"""
+    stake_id: int = Field(..., description="Stake ID to unstake")
+    tx_hash: str = Field(..., min_length=66, max_length=66, description="Unstake transaction hash")
+    
+    @field_validator("tx_hash")
+    @classmethod
+    def validate_tx_hash(cls, v):
+        """Validate transaction hash format"""
+        if not v.startswith('0x') or len(v) != 66:
+            raise ValueError('Transaction hash must be a valid Ethereum transaction hash (0x + 64 hex chars)')
+        return v
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UnstakeSyncResponse(BaseModel):
+    """Response schema for unstaking synchronization"""
+    success: bool
+    message: str
+    stake_id: int = Field(..., description="Stake ID")
+    unstaked_at: datetime = Field(..., description="Unstake timestamp")
+    tx_hash: str = Field(..., description="Unstake transaction hash")
+    status: str = Field(..., description="Updated stake status")
+    is_early_withdrawal: bool = Field(default=False, description="Whether this was an early withdrawal")
+    penalty_amount: float = Field(default=0.0, description="Penalty amount for early withdrawal")
+    
+    model_config = ConfigDict(from_attributes=True)

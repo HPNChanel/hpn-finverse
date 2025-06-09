@@ -11,7 +11,8 @@ import {
   ExternalLink,
   Copy,
   CheckCircle,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -53,6 +54,22 @@ export function ConnectWalletButton({
 
   const { toast } = useToast();
   const [copied, setCopied] = React.useState(false);
+
+  // Test account addresses from environment
+  const TEST_USER_ADDRESS = import.meta.env?.VITE_TEST_USER_ADDRESS;
+  const DEPLOYER_ADDRESS = import.meta.env?.VITE_DEPLOYER_ADDRESS;
+
+  // Check if current account is a known test account
+  const isTestAccount = React.useMemo(() => {
+    if (!accountAddress) return false;
+    return accountAddress.toLowerCase() === TEST_USER_ADDRESS?.toLowerCase() || 
+           accountAddress.toLowerCase() === DEPLOYER_ADDRESS?.toLowerCase();
+  }, [accountAddress, TEST_USER_ADDRESS, DEPLOYER_ADDRESS]);
+
+  // Check if user has FVT balance
+  const hasFVTBalance = React.useMemo(() => {
+    return parseFloat(balanceFVT || '0') > 0;
+  }, [balanceFVT]);
 
   // Format address for display (0x1234...abcd)
   const formatAddress = (address: string): string => {
@@ -245,6 +262,32 @@ export function ConnectWalletButton({
           </Button>
         </div>
 
+        {/* Account validation and helper messages */}
+        {isConnected && !isTestAccount && !hasFVTBalance && (
+          <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="text-xs text-yellow-800 space-y-2">
+              <div className="font-medium flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                No FVT tokens detected
+              </div>
+              <div>This account doesn't have FVT tokens for testing.</div>
+              <div className="space-y-1">
+                <div>✅ <strong>Option 1:</strong> Import test account in MetaMask:</div>
+                <div className="font-mono text-xs bg-yellow-100 p-1 rounded">
+                  Private Key: 0x59c6995e...78690d
+                </div>
+                <div>✅ <strong>Option 2:</strong> Get tokens transferred to this account</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isConnected && isTestAccount && (
+          <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-700">
+            ✅ Test account detected - ready for staking!
+          </div>
+        )}
+
         {/* Account switching notice */}
         <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
           💡 Switch accounts in MetaMask to change connected wallet
@@ -334,7 +377,8 @@ export function ConnectWalletButton({
               <span className="text-muted-foreground">FVT Balance:</span>
               <span className={cn(
                 "font-mono font-medium",
-                isReconnecting && "opacity-50"
+                isReconnecting && "opacity-50",
+                !hasFVTBalance && "text-yellow-600"
               )}>
                 {formatBalance(balanceFVT)} FVT
               </span>

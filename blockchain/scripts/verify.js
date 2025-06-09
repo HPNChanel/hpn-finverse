@@ -51,12 +51,25 @@ async function main() {
     const lockPeriod = await stakeVault.LOCK_PERIOD();
     const apyPercentage = await stakeVault.APY_PERCENTAGE();
     const totalStaked = await stakeVault.totalStakedAmount();
+    const poolCount = await stakeVault.poolCount();
     
     console.log("✅ Staking Token:", stakingToken);
     console.log("✅ Lock Period:", Number(lockPeriod) / (24 * 60 * 60), "days");
     console.log("✅ APY Percentage:", Number(apyPercentage), "%");
     console.log("✅ Total Staked:", ethers.formatEther(totalStaked), "tokens");
+    console.log("✅ Pool Count:", Number(poolCount));
     console.log("✅ Token Address Match:", stakingToken === tokenAddress);
+    
+    // Check pools
+    for (let i = 0; i < Number(poolCount); i++) {
+      const pool = await stakeVault.stakingPools(i);
+      console.log(`✅ Pool ${i}:`, {
+        tokenAddress: pool.tokenAddress === "0x0000000000000000000000000000000000000000" ? "ETH" : pool.tokenAddress,
+        name: pool.name,
+        apy: Number(pool.apy),
+        isActive: pool.isActive
+      });
+    }
   } catch (error) {
     console.error("❌ StakeVault verification failed:", error.message);
   }

@@ -1,22 +1,43 @@
-import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Target, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Target, Edit2, Trash2 } from 'lucide-react';
 import { Goal, goalService } from '@/services/goal.service';
-import { useToast } from '@/hooks/use-toast';
 import { useApiError } from '@/utils/errorHandler';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/utils';
+import { CreateGoalModal } from '@/components/goals/CreateGoalModal';
+import { EditGoalModal } from '@/components/goals/EditGoalModal';
 
-const PRIORITY_LABELS = {
-  1: { label: 'Low', color: 'bg-gray-100 text-gray-800' },
-  2: { label: 'Medium', color: 'bg-blue-100 text-blue-800' },
-  3: { label: 'High', color: 'bg-red-100 text-red-800' }
-};
+interface DeleteConfirmDialog {
+  goalName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
 
-const STATUS_LABELS = {
-  1: { label: 'Ongoing', color: 'bg-yellow-100 text-yellow-800' },
-  2: { label: 'Completed', color: 'bg-green-100 text-green-800' },
-  3: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800' }
+const DeleteConfirmDialog = ({ goalName, onConfirm, onCancel }: DeleteConfirmDialog) => {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+        <h3 className="text-lg font-semibold mb-2">Delete Goal</h3>
+        <p className="text-gray-600 mb-4">
+          Are you sure you want to delete "{goalName}"? This action cannot be undone.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export function Goals() {
@@ -30,16 +51,7 @@ export function Goals() {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'progress'>('cards');
   
-  // Form state with proper defaults
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    target_amount: '0',
-    current_amount: '0',
-    target_date: '',
-    priority: '1',
-    status: '1'
-  });
+
 
   const { toast } = useToast();
   const { handleError } = useApiError();
@@ -87,60 +99,7 @@ export function Goals() {
     }
   };
 
-  const createGoal = async (goalData: {
-    name: string;
-    target_amount: number;
-    current_amount?: number;
-    start_date: string;
-    target_date: string;
-    description?: string;
-    priority: number;
-    icon?: string;
-    color?: string;
-  }) => {
-    try {
-      await goalService.createGoal(goalData);
-      await fetchGoals();
-      setIsCreateModalOpen(false);
-      
-      toast({
-        title: "Success",
-        description: "Goal created successfully.",
-      });
-    } catch (err: any) {
-      const errorMessage = handleError(err, 'Create goal');
-      setError(errorMessage);
-      
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    }
-  };
 
-  const updateGoal = async (goalId: number, goalData: Partial<Goal>) => {
-    try {
-      await goalService.updateGoal(goalId, goalData);
-      await fetchGoals();
-      setIsEditModalOpen(false);
-      setEditingGoal(null);
-      
-      toast({
-        title: "Success",
-        description: "Goal updated successfully.",
-      });
-    } catch (err: any) {
-      const errorMessage = handleError(err, 'Update goal');
-      setError(errorMessage);
-      
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    }
-  };
 
   const deleteGoal = async (goalId: number) => {
     try {
@@ -321,7 +280,7 @@ export function Goals() {
       <CreateGoalModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onSubmit={createGoal}
+        onSuccess={fetchGoals}
       />
 
       {/* Edit Goal Modal */}
@@ -332,7 +291,7 @@ export function Goals() {
           setEditingGoal(null);
         }}
         goal={editingGoal}
-        onUpdate={updateGoal}
+        onSuccess={fetchGoals}
       />
 
       {/* Delete Confirmation Dialog */}
@@ -371,32 +330,14 @@ function GoalCard({
     <div className="p-6 bg-card border border-border rounded-lg hover:shadow-md transition-shadow">
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10 text-primary">
-            <Target className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-foreground">{goal.name}</h3>
-            <div className="flex gap-2 mt-1">
-              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${PRIORITY_LABELS[goal.priority as keyof typeof PRIORITY_LABELS].color}`}>
-                {PRIORITY_LABELS[goal.priority as keyof typeof PRIORITY_LABELS].label}
-              </span>
-              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${STATUS_LABELS[goal.status as keyof typeof STATUS_LABELS].color}`}>
-                {STATUS_LABELS[goal.status as keyof typeof STATUS_LABELS].label}
-              </span>
-            </div>
-          </div>
+          <Target className="w-5 h-5 text-primary" />
+          <h3 className="font-semibold">{goal.name}</h3>
         </div>
         <div className="flex gap-1">
-          <button
-            onClick={() => onEdit(goal)}
-            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
+          <button onClick={() => onEdit(goal)} className="p-1 hover:bg-muted rounded" title="Edit goal" aria-label="Edit goal">
             <Edit2 className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => onDelete(goal.id)}
-            className="p-1 text-muted-foreground hover:text-destructive transition-colors"
-          >
+          <button onClick={() => onDelete(goal.id)} className="p-1 hover:bg-muted rounded" title="Delete goal" aria-label="Delete goal">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
@@ -404,51 +345,31 @@ function GoalCard({
 
       {/* Progress Bar */}
       <div className="mb-4">
-        <div className="flex justify-between text-sm mb-2">
-          <span className="text-muted-foreground">Progress</span>
-          <span className="font-medium">{goal.progress_percentage.toFixed(1)}%</span>
-        </div>
         <div className="w-full bg-muted rounded-full h-2">
-          <div
-            className={`h-2 rounded-full transition-all duration-300 ${
-              isCompleted ? 'bg-green-500' : 'bg-primary'
-            }`}
-            style={{ width: `${Math.min(goal.progress_percentage, 100)}%` }}
+          <div 
+            className="h-2 rounded-full bg-primary"
+            style={{ width: `${Math.min((goal.current_amount / goal.target_amount) * 100, 100)}%` }}
           />
         </div>
       </div>
 
-      {/* Amount Info */}
-      <div className="space-y-2 mb-4">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Current</span>
-          <span className="font-medium">{formatCurrency(goal.current_amount)}</span>
+      <div className="space-y-2">
+        <div className="flex justify-between">
+          <span>Current:</span>
+          <span>{formatCurrency(goal.current_amount)}</span>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Target</span>
-          <span className="font-medium">{formatCurrency(goal.target_amount)}</span>
+        <div className="flex justify-between">
+          <span>Target:</span>
+          <span>{formatCurrency(goal.target_amount)}</span>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">Remaining</span>
-          <span className="font-medium">{formatCurrency(goal.target_amount - goal.current_amount)}</span>
-        </div>
-      </div>
-
-      {/* Date Info */}
-      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-        <div className="flex items-center gap-1">
-          <Calendar className="w-4 h-4" />
+        <div className="flex justify-between">
+          <span>Target Date:</span>
           <span>{formatDate(goal.target_date)}</span>
-        </div>
-        <div className={`font-medium ${isOverdue ? 'text-destructive' : isCompleted ? 'text-green-600' : ''}`}>
-          {isCompleted ? 'Completed' : isOverdue ? `${Math.abs(daysRemaining)} days overdue` : `${daysRemaining} days left`}
         </div>
       </div>
 
       {goal.description && (
-        <p className="text-sm text-muted-foreground mt-3 border-t border-border pt-3">
-          {goal.description}
-        </p>
+        <p className="text-sm text-muted-foreground mt-3">{goal.description}</p>
       )}
     </div>
   );
@@ -472,435 +393,20 @@ function ProgressCard({
 }) {
   const daysRemaining = getDaysRemaining(goal.target_date);
   const isOverdue = daysRemaining < 0;
-  const isCompleted = goal.status === 2;
 
   return (
-    <div className="p-6 bg-card border border-border rounded-lg">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-4">
-          <div className="p-2 rounded-lg bg-primary/10 text-primary">
-            <Target className="w-6 h-6" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-foreground text-lg">{goal.name}</h3>
-            <div className="flex gap-2 mt-1">
-              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${PRIORITY_LABELS[goal.priority as keyof typeof PRIORITY_LABELS].color}`}>
-                {PRIORITY_LABELS[goal.priority as keyof typeof PRIORITY_LABELS].label}
-              </span>
-              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${STATUS_LABELS[goal.status as keyof typeof STATUS_LABELS].color}`}>
-                {STATUS_LABELS[goal.status as keyof typeof STATUS_LABELS].label}
-              </span>
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => onEdit(goal)}
-            className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-          >
+    <div className="p-4 bg-card border border-border rounded-lg">
+      <div className="flex justify-between items-center">
+        <h3 className="font-medium">{goal.name}</h3>
+        <div className="flex gap-1">
+          <button onClick={() => onEdit(goal)} className="p-1 hover:bg-muted rounded" title="Edit goal" aria-label="Edit goal">
             <Edit2 className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => onDelete(goal.id)}
-            className="p-2 text-muted-foreground hover:text-destructive transition-colors"
-          >
+          <button onClick={() => onDelete(goal.id)} className="p-1 hover:bg-muted rounded" title="Delete goal" aria-label="Delete goal">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
-
-      {/* Large Progress Bar */}
-      <div className="mb-4">
-        <div className="flex justify-between items-end mb-2">
-          <div>
-            <span className="text-2xl font-bold text-foreground">{goal.progress_percentage.toFixed(1)}%</span>
-            <span className="text-muted-foreground ml-2">complete</span>
-          </div>
-          <div className="text-right">
-            <div className="text-sm text-muted-foreground">
-              {formatCurrency(goal.current_amount)} of {formatCurrency(goal.target_amount)}
-            </div>
-          </div>
-        </div>
-        <div className="w-full bg-muted rounded-full h-4">
-          <div
-            className={`h-4 rounded-full transition-all duration-500 ${
-              isCompleted ? 'bg-green-500' : 'bg-primary'
-            }`}
-            style={{ width: `${Math.min(goal.progress_percentage, 100)}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Bottom Info */}
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <Calendar className="w-4 h-4" />
-            <span>Target: {formatDate(goal.target_date)}</span>
-          </div>
-          <div className={`font-medium ${isOverdue ? 'text-destructive' : isCompleted ? 'text-green-600' : 'text-foreground'}`}>
-            {isCompleted ? 'Completed' : isOverdue ? `${Math.abs(daysRemaining)} days overdue` : `${daysRemaining} days remaining`}
-          </div>
-        </div>
-        <div className="text-muted-foreground">
-          {formatCurrency(goal.target_amount - goal.current_amount)} remaining
-        </div>
-      </div>
     </div>
-  );
-}
-
-// Create Goal Modal Component
-function CreateGoalModal({ 
-  isOpen, 
-  onClose, 
-  onSubmit 
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onSubmit: (data: any) => void;
-}) {
-  const [formData, setFormData] = useState({
-    name: '',
-    target_amount: 0,
-    current_amount: 0,
-    start_date: new Date().toISOString().split('T')[0],
-    target_date: '',
-    description: '',
-    priority: 2,
-    icon: '🎯',
-    color: '#1976d2'
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(formData);
-    setFormData({
-      name: '',
-      target_amount: 0,
-      current_amount: 0,
-      start_date: new Date().toISOString().split('T')[0],
-      target_date: '',
-      description: '',
-      priority: 2,
-      icon: '🎯',
-      color: '#1976d2'
-    });
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">Create New Goal</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Goal Name</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background"
-              required
-            />
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Target Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.target_amount}
-                onChange={(e) => setFormData({ ...formData, target_amount: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Current Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.current_amount}
-                onChange={(e) => setFormData({ ...formData, current_amount: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Start Date</label>
-              <input
-                type="date"
-                value={formData.start_date}
-                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Target Date</label>
-              <input
-                type="date"
-                value={formData.target_date}
-                onChange={(e) => setFormData({ ...formData, target_date: e.target.value })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Priority</label>
-            <select
-              value={formData.priority}
-              onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background"
-            >
-              <option value={1}>Low</option>
-              <option value={2}>Medium</option>
-              <option value={3}>High</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Description (Optional)</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background"
-              rows={3}
-            />
-          </div>
-
-          <div className="flex gap-2 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-            >
-              Create Goal
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// Edit Goal Modal Component
-function EditGoalModal({ 
-  isOpen, 
-  onClose, 
-  goal, 
-  onUpdate 
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  goal: Goal | null;
-  onUpdate: (goalId: number, data: any) => void;
-}) {
-  const [formData, setFormData] = useState({
-    name: '',
-    target_amount: 0,
-    current_amount: 0,
-    start_date: '',
-    target_date: '',
-    description: '',
-    priority: 2
-  });
-
-  useEffect(() => {
-    if (goal) {
-      setFormData({
-        name: goal.name,
-        target_amount: goal.target_amount,
-        current_amount: goal.current_amount,
-        start_date: goal.start_date,
-        target_date: goal.target_date,
-        description: goal.description || '',
-        priority: goal.priority
-      });
-    }
-  }, [goal]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (goal) {
-      onUpdate(goal.id, formData);
-    }
-  };
-
-  if (!isOpen || !goal) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">Edit Goal</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Goal Name</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background"
-              required
-            />
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Target Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.target_amount}
-                onChange={(e) => setFormData({ ...formData, target_amount: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Current Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.current_amount}
-                onChange={(e) => setFormData({ ...formData, current_amount: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Start Date</label>
-              <input
-                type="date"
-                value={formData.start_date}
-                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Target Date</label>
-              <input
-                type="date"
-                value={formData.target_date}
-                onChange={(e) => setFormData({ ...formData, target_date: e.target.value })}
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Priority</label>
-            <select
-              value={formData.priority}
-              onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background"
-            >
-              <option value={1}>Low</option>
-              <option value={2}>Medium</option>
-              <option value={3}>High</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-input rounded-md bg-background"
-              rows={3}
-            />
-          </div>
-
-          <div className="flex gap-2 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-border rounded-md hover:bg-muted transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-            >
-              Update Goal
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// Delete Confirmation Dialog - Updated to use ShadCN Dialog
-function DeleteConfirmDialog({ 
-  goalName, 
-  onConfirm, 
-  onCancel 
-}: {
-  goalName: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const handleConfirm = async () => {
-    setIsDeleting(true);
-    try {
-      await onConfirm();
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  return (
-    <Dialog open={true} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="text-destructive">Delete Goal</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete "{goalName}"? This action cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            disabled={isDeleting}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={handleConfirm}
-            disabled={isDeleting}
-          >
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
