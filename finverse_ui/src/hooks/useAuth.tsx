@@ -191,7 +191,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (authService.isAuthenticated()) {
       try {
         const userData = await authService.getCurrentUser();
+        console.log('🔄 refreshUser - Fetched user data:', userData);
         setUser(userData);
+        
+        // Optional: Store user data in localStorage for debugging
+        if (process.env.NODE_ENV === 'development') {
+          localStorage.setItem('user_data', JSON.stringify(userData));
+        }
       } catch (error: any) {
         ErrorHandler.logError(error as Error, 'Refresh User');
         

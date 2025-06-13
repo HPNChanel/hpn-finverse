@@ -36,6 +36,7 @@ class User(Base):
     budget_alerts = relationship("BudgetAlert", back_populates="user", cascade="all, delete-orphan")
     stakes = relationship("Stake", back_populates="user", cascade="all, delete-orphan")  # Only unified Stake
     staking_logs = relationship("StakingLog", back_populates="user", cascade="all, delete-orphan")
+    savings_plans = relationship("SavingsPlan", back_populates="user", cascade="all, delete-orphan")
     
     def to_dict(self):
         """Convert user to dictionary for serialization"""

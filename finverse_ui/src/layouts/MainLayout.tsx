@@ -1,5 +1,6 @@
 import { ReactNode, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { Link, useLocation } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -10,12 +11,12 @@ import {
   Target, 
   TrendingUp, 
   PieChart,
+  PiggyBank,
   Menu, 
   X,
   LogOut,
   Settings,
-  User,
-  ChevronDown
+  User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -28,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+
 import { cn } from '@/lib/utils';
 import { ErrorHandler } from '@/utils/errorHandler';
 
@@ -42,6 +44,7 @@ const navigation = [
   { name: 'Categories', href: '/categories', icon: FolderOpen },
   { name: 'Budget', href: '/budgets', icon: PieChart },
   { name: 'Goals', href: '/goals', icon: Target },
+  { name: 'Savings', href: '/savings', icon: PiggyBank },
   { name: 'Staking', href: '/staking', icon: TrendingUp },
 ];
 
@@ -50,6 +53,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { toast } = useToast();
+  const { getAvatarSrc } = useAvatarUrl({ avatarUrl: user?.avatar_url });
 
   const getUserInitials = (name: string) => {
     return name
@@ -173,20 +177,25 @@ export function MainLayout({ children }: MainLayoutProps) {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                     <Avatar className="h-10 w-10">
-                      <AvatarImage src={user.avatar_url} alt={user.name || user.email} />
+                      <AvatarImage 
+                        src={getAvatarSrc()} 
+                        alt={user.name || user.email} 
+                      />
                       <AvatarFallback className="text-sm">
                         {getUserInitials(user.name || user.email)}
                       </AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuContent className="w-64" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none truncate">
+                    <div className="flex flex-col space-y-1.5 py-1">
+                      <p className="text-sm font-medium leading-relaxed break-words" 
+                         title={user.name || user.email}>
                         {user.name || user.email}
                       </p>
-                      <p className="text-xs leading-none text-muted-foreground truncate">
+                      <p className="text-xs leading-none text-muted-foreground break-all" 
+                         title={user.email}>
                         {user.email}
                       </p>
                     </div>

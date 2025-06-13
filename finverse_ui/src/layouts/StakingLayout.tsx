@@ -198,21 +198,23 @@ export function StakingLayout({ children }: StakingLayoutProps) {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={user.avatar_url} alt={user.name || user.email} />
-                      <AvatarFallback className="text-sm bg-gradient-to-r from-blue-600 to-green-600 text-white">
-                        {getUserInitials(user.name || user.email)}
-                      </AvatarFallback>
-                    </Avatar>
+                                      <Avatar className="h-10 w-10">
+                    <AvatarImage src={user.avatar_url || undefined} alt={user.name || user.email} />
+                    <AvatarFallback className="text-sm bg-gradient-to-r from-blue-600 to-green-600 text-white">
+                      {getUserInitials(user.name || user.email)}
+                    </AvatarFallback>
+                  </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
+                <DropdownMenuContent className="w-64" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none truncate">
+                    <div className="flex flex-col space-y-1.5 py-1">
+                      <p className="text-sm font-medium leading-relaxed break-words" 
+                         title={user.name || user.email}>
                         {user.name || user.email}
                       </p>
-                      <p className="text-xs leading-none text-muted-foreground truncate">
+                      <p className="text-xs leading-none text-muted-foreground break-all" 
+                         title={user.email}>
                         {user.email}
                       </p>
                     </div>

@@ -57,7 +57,7 @@ async def update_profile(
     return user
 
 
-@router.patch("/change-password", status_code=status.HTTP_200_OK)
+@router.post("/change-password", status_code=status.HTTP_200_OK)
 async def change_password(
     password_data: ChangePasswordRequest,
     user_id: int = Depends(get_current_user_id),

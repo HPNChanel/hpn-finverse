@@ -6,20 +6,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Separator } from '@/components/ui/separator';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Camera, Save, Lock } from 'lucide-react';
+
+import { Loader2, Camera, Save, Lock, Upload, RefreshCw, User as UserIcon } from 'lucide-react';
 import { useApiError } from '@/utils/errorHandler';
+import { useToast } from '@/hooks/use-toast';
+import { logAvatarState, testAvatarEndpoint } from '@/utils/avatarDebug';
 
 export function Profile() {
   const { user, refreshUser } = useAuth();
   const { handleError } = useApiError();
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-  const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [isAvatarLoading, setIsAvatarLoading] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(null);
+  const [avatarTimestamp, setAvatarTimestamp] = useState<number>(Date.now());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Profile form state - ensure controlled inputs with proper defaults
@@ -34,28 +36,60 @@ export function Profile() {
   });
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Update profileData when user data is loaded
+  // Update profileData and currentAvatarUrl when user data changes
   useEffect(() => {
     if (user) {
+      logAvatarState('Profile component user effect');
+      
       setProfileData({
         name: user.name || '',
       });
+      
+      // Only update avatar URL if it's different from current (prevent unnecessary re-renders)
+      if (user.avatar_url !== currentAvatarUrl) {
+        console.log(`🔄 Avatar URL updating: ${currentAvatarUrl} → ${user.avatar_url}`);
+        setCurrentAvatarUrl(user.avatar_url || null);
+        // Update timestamp to force cache refresh when avatar URL changes
+        if (user.avatar_url) {
+          setAvatarTimestamp(Date.now());
+        }
+      }
     }
-  }, [user]);
+  }, [user, currentAvatarUrl]);
+
+  // Load user data on component mount (ensures avatar is loaded on page reload)
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!user && !isLoading) {
+        try {
+          await refreshUser();
+        } catch (error) {
+          console.error('Failed to load user data on mount:', error);
+        }
+      }
+    };
+    
+    loadUserData();
+  }, [user, isLoading, refreshUser]); // Include dependencies
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError('');
-    setSuccess('');
 
     try {
       await profileService.updateProfile(profileData);
       await refreshUser();
-      setSuccess('Profile updated successfully!');
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been updated successfully.",
+      });
     } catch (err) {
       const errorMessage = handleError(err, 'Update profile');
-      setError(errorMessage);
+      toast({
+        title: "Update Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -64,66 +98,188 @@ export function Profile() {
   const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsPasswordLoading(true);
-    setPasswordError('');
-    setPasswordSuccess('');
 
     // Validate passwords match
     if (passwordData.new_password !== confirmPassword) {
-      setPasswordError('New passwords do not match');
+      toast({
+        title: "Password Mismatch",
+        description: "New passwords do not match. Please try again.",
+        variant: "destructive",
+      });
       setIsPasswordLoading(false);
       return;
     }
 
     // Validate password length
     if (passwordData.new_password.length < 6) {
-      setPasswordError('New password must be at least 6 characters long');
+      toast({
+        title: "Password Too Short",
+        description: "New password must be at least 6 characters long.",
+        variant: "destructive",
+      });
       setIsPasswordLoading(false);
       return;
     }
 
     try {
       await profileService.updatePassword(passwordData);
-      setPasswordSuccess('Password updated successfully!');
+      toast({
+        title: "Password Changed",
+        description: "Your password has been updated successfully.",
+      });
       setPasswordData({ old_password: '', new_password: '' });
       setConfirmPassword('');
     } catch (err) {
       const errorMessage = handleError(err, 'Update password');
-      setPasswordError(errorMessage);
+      toast({
+        title: "Password Update Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setIsPasswordLoading(false);
     }
   };
 
-  const handleAvatarUpdate = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      setError('Please select an image file');
+      toast({
+        title: "Invalid File Type",
+        description: "Please select an image file (JPG, PNG, GIF, WebP).",
+        variant: "destructive",
+      });
       return;
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setError('Image size must be less than 5MB');
+      toast({
+        title: "File Too Large",
+        description: "Image size must be less than 5MB. Please choose a smaller image.",
+        variant: "destructive",
+      });
       return;
     }
 
-    setIsLoading(true);
-    setError('');
-    setSuccess('');
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setAvatarPreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAvatarUpload = async () => {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) return;
+
+    setIsAvatarLoading(true);
 
     try {
-      await profileService.updateAvatar(file);
-      await refreshUser();
-      setSuccess('Avatar updated successfully!');
+      // Upload avatar and get response with new avatar URL
+      const response = await profileService.updateAvatar(file);
+      
+      console.log('Avatar upload response:', response); // Debug log
+      
+      // Update local state immediately with the new avatar URL
+      if (response.avatar_url) {
+        setCurrentAvatarUrl(response.avatar_url);
+        setAvatarTimestamp(Date.now()); // Force cache bust
+        console.log('Updated avatar URL:', response.avatar_url); // Debug log
+      }
+      
+      // Clear preview since we now have the uploaded image
+      setAvatarPreview(null);
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      
+      // Refresh user context to sync everything (but don't await to prevent race conditions)
+      refreshUser().catch(console.error);
+      
+      toast({
+        title: "Avatar Updated",
+        description: "Your profile picture has been updated successfully.",
+      });
     } catch (err) {
       const errorMessage = handleError(err, 'Update avatar');
-      setError(errorMessage);
+      toast({
+        title: "Avatar Update Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
-      setIsLoading(false);
+      setIsAvatarLoading(false);
     }
+  };
+
+  const handleCancelAvatar = () => {
+    setAvatarPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRefreshAvatar = async () => {
+    setIsAvatarLoading(true);
+    try {
+      logAvatarState('Before refresh avatar');
+      await refreshUser();
+      setAvatarTimestamp(Date.now()); // Force cache bust
+      logAvatarState('After refresh avatar');
+      toast({
+        title: "Avatar Refreshed",
+        description: "Avatar has been refreshed from server.",
+      });
+    } catch {
+      toast({
+        title: "Refresh Failed",
+        description: "Failed to refresh avatar. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAvatarLoading(false);
+    }
+  };
+
+  const handleTestAvatarEndpoint = async () => {
+    const userData = await testAvatarEndpoint();
+    if (userData) {
+      toast({
+        title: "Endpoint Test Successful",
+        description: `Avatar URL: ${userData.avatar_url || 'None'}`,
+      });
+    } else {
+      toast({
+        title: "Endpoint Test Failed",
+        description: "Check console for details.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getAvatarSrc = () => {
+    // Priority: 1. Preview (if selecting new image), 2. Current avatar URL with cache busting
+    if (avatarPreview) {
+      return avatarPreview;
+    }
+    
+    if (currentAvatarUrl) {
+      // Use the avatar URL as-is since Vite proxy will handle /uploads requests
+      const fullAvatarUrl = currentAvatarUrl;
+      
+      // Add cache-busting timestamp to prevent caching issues
+      const separator = fullAvatarUrl.includes('?') ? '&' : '?';
+      return `${fullAvatarUrl}${separator}t=${avatarTimestamp}`;
+    }
+    
+    return undefined;
   };
 
   const getUserInitials = (name: string) => {
@@ -135,10 +291,21 @@ export function Profile() {
       .slice(0, 2);
   };
 
+  const getDefaultAvatarContent = () => {
+    if (user?.name) {
+      return getUserInitials(user.name);
+    }
+    if (user?.email) {
+      return getUserInitials(user.email);
+    }
+    return <UserIcon className="h-12 w-12" />;
+  };
+
   if (!user) {
     return (
       <div className="flex justify-center items-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2 text-muted-foreground">Loading profile...</span>
       </div>
     );
   }
@@ -156,51 +323,110 @@ export function Profile() {
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Avatar Section */}
-            <div className="flex items-center space-x-4">
+            <div className="flex items-start space-x-6">
               <div className="relative">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={user.avatar_url} alt={user.name} />
-                  <AvatarFallback className="text-lg">
-                    {getUserInitials(user.name || user.email)}
+                <Avatar className="h-24 w-24">
+                  <AvatarImage 
+                    src={getAvatarSrc()}
+                    alt={user.name || user.email}
+                    key={`avatar-${avatarTimestamp}`} // Force re-render when timestamp changes
+                  />
+                  <AvatarFallback className="text-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white">
+                    {getDefaultAvatarContent()}
                   </AvatarFallback>
                 </Avatar>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full p-0"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading}
-                >
-                  <Camera className="h-4 w-4" />
-                </Button>
+                {!avatarPreview && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full p-0"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isAvatarLoading}
+                  >
+                    <Camera className="h-4 w-4" />
+                  </Button>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={handleAvatarUpdate}
+                  onChange={handleAvatarSelect}
+                  aria-label="Select avatar image"
                 />
               </div>
-              <div>
-                <h3 className="text-lg font-medium">{user.name || user.email}</h3>
-                <p className="text-sm text-muted-foreground">{user.email}</p>
+              <div className="flex-1">
+                <h3 className="text-lg font-medium break-words">{user.name || user.email}</h3>
+                <p className="text-sm text-muted-foreground break-all">{user.email}</p>
                 <p className="text-xs text-muted-foreground">
                   Member since {new Date(user.created_at).toLocaleDateString()}
                 </p>
+                
+                {/* Avatar Upload Controls */}
+                {avatarPreview && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      onClick={handleAvatarUpload}
+                      disabled={isAvatarLoading}
+                    >
+                      {isAvatarLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Upload
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCancelAvatar}
+                      disabled={isAvatarLoading}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+                
+                {/* Avatar Refresh Controls - Only show if user has an avatar and no preview */}
+                {!avatarPreview && currentAvatarUrl && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRefreshAvatar}
+                      disabled={isAvatarLoading}
+                    >
+                      {isAvatarLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Refreshing...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Refresh Avatar
+                        </>
+                      )}
+                    </Button>
+                    {process.env.NODE_ENV === 'development' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleTestAvatarEndpoint}
+                      >
+                        Test Endpoint
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Success/Error Messages */}
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {success && (
-              <Alert>
-                <AlertDescription className="text-green-600">{success}</AlertDescription>
-              </Alert>
-            )}
           </CardContent>
         </Card>
 
@@ -271,16 +497,6 @@ export function Profile() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {passwordError && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{passwordError}</AlertDescription>
-              </Alert>
-            )}
-            {passwordSuccess && (
-              <Alert className="mb-4">
-                <AlertDescription className="text-green-600">{passwordSuccess}</AlertDescription>
-              </Alert>
-            )}
             <form onSubmit={handlePasswordUpdate} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="old_password">Current Password</Label>

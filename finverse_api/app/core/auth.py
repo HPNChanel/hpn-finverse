@@ -54,12 +54,13 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
         raise credentials_exception
 
 async def get_current_user(
-    user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
 ) -> User:
     """
     Get current authenticated user
     """
+    user_id = get_current_user_id(token)
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         logger.warning(f"User with ID {user_id} not found")

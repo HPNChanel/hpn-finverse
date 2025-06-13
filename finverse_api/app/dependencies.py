@@ -19,18 +19,21 @@ logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
-def get_db() -> Session:
+def get_db():
     """
     Database dependency - yields database session
     """
-    return session_get_db()
+    yield from session_get_db()
 
 
-async def get_current_user(db: Session = Depends(get_db)) -> User:
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
     """
     Get current authenticated user dependency
     """
-    return await auth_get_current_user(db=db)
+    return await auth_get_current_user(db=db, token=token)
 
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:

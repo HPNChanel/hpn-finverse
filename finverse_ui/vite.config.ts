@@ -17,6 +17,14 @@ export default defineConfig({
     fs: {
       // Allow serving files from the blockchain directory
       allow: ['..', '../blockchain']
+    },
+    proxy: {
+      // Proxy avatar uploads to the backend
+      '/uploads': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false
+      }
     }
   },
   build: {

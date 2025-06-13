@@ -4,7 +4,9 @@ Main entry point for the FinVerse API - Clean Architecture Implementation
 
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from pathlib import Path
 
 # Import models first to ensure proper registration
 from app.models.user import User
@@ -14,6 +16,7 @@ from app.models.financial_account import FinancialAccount
 from app.models.budget import Budget, BudgetAlert
 from app.models.financial_goal import FinancialGoal
 from app.models.category import Category
+from app.models.savings_plan import SavingsPlan, SavingsProjection
 
 # Import routers with explicit imports (Clean Architecture)
 from app.routers import (
@@ -25,7 +28,8 @@ from app.routers import (
     category_router,
     budget_router,
     staking_router,
-    settings_router
+    settings_router,
+    savings_router
 )
 
 # Import wallet router from financial_account
@@ -143,6 +147,8 @@ api_v1_router.include_router(budget_router)
 api_v1_router.include_router(staking_router)
 api_v1_router.include_router(settings_router)
 print("✅ Settings router included")
+api_v1_router.include_router(savings_router)
+print("✅ Savings router included")
 
 # Include optional routers if available
 if profile_available and profile_router:
@@ -181,6 +187,14 @@ except ImportError:
     sync_scheduler = None
     sync_scheduler_available = False
     print("⚠️ Sync scheduler not available")
+
+# Create uploads directory if it doesn't exist
+uploads_dir = Path("uploads")
+uploads_dir.mkdir(exist_ok=True)
+(uploads_dir / "avatars").mkdir(exist_ok=True)
+
+# Mount static files for avatar uploads
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Mount the API v1 router at /api/v1
 app.mount("/api/v1", api_v1_router)

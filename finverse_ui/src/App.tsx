@@ -1,6 +1,7 @@
 import { AuthProvider } from '@/hooks/useAuth'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { AppStateProvider } from '@/contexts/AppStateContext'
+import { QueryClient, QueryClientProvider } from 'react-query'
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom'
 import { Dashboard } from '@/pages/Dashboard'
 import { Login } from '@/pages/Login'
@@ -12,6 +13,7 @@ import { Goals } from '@/pages/Goals'
 import { Transactions } from '@/pages/Transactions'
 import { Categories } from '@/pages/Categories'
 import { Budgets } from '@/pages/Budgets'
+import { Savings } from '@/pages/Savings'
 import { MainLayout, StakingLayout } from '@/layouts'
 import { StakingHistory } from '@/components/staking/StakingHistory'
 import { Toaster } from '@/components/ui/toaster'
@@ -25,12 +27,24 @@ import { SendETH } from '@/pages/SendETH'
 import { WalletHistory } from '@/pages/WalletHistory'
 import { StakingTransferHistory } from '@/pages/staking/StakingTransferHistory'
 
+// Create a QueryClient instance
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+});
+
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <AppStateProvider>
-          <Router>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppStateProvider>
+            <Router>
             <div className="min-h-screen overflow-y-auto bg-background">
               <Routes>
                 {/* Public routes */}
@@ -130,6 +144,16 @@ function App() {
                     </RequireAuth>
                   }
                 />
+                <Route
+                  path="/savings"
+                  element={
+                    <RequireAuth>
+                      <MainLayout>
+                        <Savings />
+                      </MainLayout>
+                    </RequireAuth>
+                  }
+                />
 
                 {/* Staking Route Group - Apply StakingLayout once */}
                 <Route
@@ -206,6 +230,7 @@ function App() {
         </AppStateProvider>
       </AuthProvider>
     </ThemeProvider>
+    </QueryClientProvider>
   )
 }
 
