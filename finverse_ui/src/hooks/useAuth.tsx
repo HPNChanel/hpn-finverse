@@ -195,7 +195,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(userData);
         
         // Optional: Store user data in localStorage for debugging
-        if (process.env.NODE_ENV === 'development') {
+        if (import.meta.env.DEV) {
           localStorage.setItem('user_data', JSON.stringify(userData));
         }
       } catch (error: any) {

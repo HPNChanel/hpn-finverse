@@ -26,7 +26,7 @@ class SavingsPlanBase(BaseModel):
 
 # Schema for creating a new savings plan
 class SavingsPlanCreate(SavingsPlanBase):
-    pass
+    source_account_id: int = Field(..., gt=0, description="ID of the financial account to deduct money from")
 
 
 # Schema for updating a savings plan (all fields optional)
@@ -37,6 +37,7 @@ class SavingsPlanUpdate(BaseModel):
     interest_rate: Optional[float] = Field(None, gt=0, le=100)
     duration_months: Optional[int] = Field(None, gt=0, le=600)
     interest_type: Optional[InterestType] = None
+    source_account_id: Optional[int] = Field(None, gt=0, description="ID of the financial account to deduct money from")
 
 
 # Schema for savings projection data
@@ -54,6 +55,7 @@ class SavingsProjectionResponse(BaseModel):
 class SavingsPlanResponse(BaseModel):
     id: int
     user_id: int
+    source_account_id: int
     name: str
     initial_amount: float
     monthly_contribution: float
@@ -62,8 +64,21 @@ class SavingsPlanResponse(BaseModel):
     interest_type: str
     created_at: str
     updated_at: str
+    status: str = "active"
+    current_balance: float = 0.0
+    total_contributed: float = 0.0
+    total_interest_earned: float = 0.0
+    last_contribution_date: Optional[str] = None
+    next_contribution_date: Optional[str] = None
+    early_withdrawal_penalty_rate: float = 0.10
+    completion_date: Optional[str] = None
+    withdrawal_amount: Optional[float] = None
     
-    @field_validator('created_at', 'updated_at', mode='before')
+    # Additional fields for UI display
+    source_account_name: Optional[str] = None
+    source_account_balance: Optional[float] = None
+    
+    @field_validator('created_at', 'updated_at', 'last_contribution_date', 'next_contribution_date', 'completion_date', mode='before')
     @classmethod
     def validate_datetime_fields(cls, v):
         """Convert datetime to ISO string"""
@@ -117,5 +132,94 @@ class SavingsPlanSummary(BaseModel):
     total_saved: float = 0.0
     total_projected_value: float = 0.0
     total_projected_interest: float = 0.0
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Schema for financial account response (for dropdowns)
+class FinancialAccountResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    balance: float
+    currency: str = "USD"
+    is_active: bool = True
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Schema for user balance information
+class UserBalanceResponse(BaseModel):
+    user_id: int
+    total_balance: float
+    currency: str = "USD"
+    last_updated: str
+    
+    @field_validator('last_updated', mode='before')
+    @classmethod
+    def validate_datetime_field(cls, v):
+        """Convert datetime to ISO string"""
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Schema for early withdrawal calculation
+class EarlyWithdrawalCalculationResponse(BaseModel):
+    current_balance: float
+    total_contributed: float
+    interest_earned: float
+    penalty_rate: float
+    penalty_amount: float
+    net_withdrawal_amount: float
+    months_elapsed: int
+    months_remaining: int
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Schema for early withdrawal request
+class EarlyWithdrawalRequest(BaseModel):
+    confirm: bool = Field(..., description="Confirmation that user wants to proceed with early withdrawal")
+
+
+# Schema for monthly contribution processing result
+class MonthlyContributionResponse(BaseModel):
+    success: bool
+    message: str
+    contribution_amount: Optional[float] = None
+    new_balance: Optional[float] = None
+    total_contributed: Optional[float] = None
+    interest_earned: Optional[float] = None
+    plan_completed: Optional[bool] = None
+    next_due_date: Optional[str] = None
+    required_amount: Optional[float] = None
+    plan_id: Optional[int] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Schema for savings transaction
+class SavingsTransactionResponse(BaseModel):
+    id: int
+    user_id: int
+    amount: float
+    transaction_type: int
+    description: Optional[str] = None
+    transaction_date: str
+    related_savings_plan_id: Optional[int] = None
+    savings_transaction_type: Optional[str] = None
+    note: Optional[str] = None
+    created_at: str
+    
+    @field_validator('transaction_date', 'created_at', mode='before')
+    @classmethod
+    def validate_datetime_fields(cls, v):
+        """Convert datetime to ISO string"""
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
     
     model_config = ConfigDict(from_attributes=True) 

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Plus, Calculator, TrendingUp, Wallet, Target, Calendar } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Calculator, TrendingUp, Wallet, Target, Eye, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { CreateSavingsPlanModal } from '@/components/savings/CreateSavingsPlanModal';
-import { SavingsPlanChart } from '@/components/savings/SavingsPlanChart';
 import { SavingsCalculatorModal } from '@/components/savings/SavingsCalculatorModal';
 import { EditSavingsPlanModal } from '@/components/savings/EditSavingsPlanModal';
 import {
@@ -15,38 +15,21 @@ import {
   useDeleteSavingsPlan,
   useSavingsPlanDetail
 } from '@/hooks/useSavings';
-import { SavingsPlan, SavingsPlanDetail } from '@/services/savingsApi';
-
-interface SavingsProjection {
-  id: number;
-  plan_id: number;
-  month_index: number;
-  balance: number;
-  interest_earned: number;
-}
-
-interface SavingsSummary {
-  total_plans: number;
-  total_saved: number;
-  total_projected_value: number;
-  total_projected_interest: number;
-}
+import { SavingsPlan } from '@/services/savingsApi';
 
 export function Savings() {
+  const navigate = useNavigate();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCalculatorModal, setShowCalculatorModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<SavingsPlan | null>(null);
-  const [selectedPlanDetail, setSelectedPlanDetail] = useState<SavingsPlanDetail | null>(null);
   
   const { toast } = useToast();
 
   // Use the new React Query hooks
   const { data: savingsPlans = [], isLoading: plansLoading, error: plansError } = useSavingsPlans();
   const { data: savingsSummary, error: summaryError } = useSavingsSummary();
-  const { data: planDetail, isLoading: planDetailLoading } = useSavingsPlanDetail(
-    selectedPlan?.id || 0
-  );
+  const { data: planDetail } = useSavingsPlanDetail(selectedPlan?.id || 0);
   
   const deleteMutation = useDeleteSavingsPlan();
 
@@ -54,22 +37,26 @@ export function Savings() {
   React.useEffect(() => {
     if (plansError) {
       console.error('Savings plans error:', plansError);
+      toast({
+        title: 'Error',
+        description: 'Failed to load savings plans. Please refresh the page.',
+        variant: 'destructive',
+      });
     }
     if (summaryError) {
       console.error('Savings summary error:', summaryError);
     }
-  }, [plansError, summaryError]);
+  }, [plansError, summaryError, toast]);
 
   const handleCreateSuccess = () => {
     setShowCreateModal(false);
-    // Toast is handled by the hook
+    // React Query will automatically refetch and update the UI
   };
 
   const handleEditSuccess = () => {
     setShowEditModal(false);
     setSelectedPlan(null);
-    setSelectedPlanDetail(null);
-    // Toast is handled by the hook
+    // React Query will automatically refetch and update the UI
   };
 
   const handleEditPlan = (plan: SavingsPlan) => {
@@ -77,16 +64,26 @@ export function Savings() {
     setShowEditModal(true);
   };
 
-  // Update plan detail when data is loaded
-  React.useEffect(() => {
-    if (planDetail && selectedPlan) {
-      setSelectedPlanDetail(planDetail);
-    }
-  }, [planDetail, selectedPlan]);
+  const handleViewDetails = (planId: number) => {
+    navigate(`/savings/${planId}`);
+  };
 
-  const handleDeletePlan = async (planId: number) => {
-    if (confirm('Are you sure you want to delete this savings plan?')) {
-      deleteMutation.mutate(planId);
+  const handleDeletePlan = async (planId: number, planName: string) => {
+    if (confirm(`Are you sure you want to delete "${planName}"? This action cannot be undone.`)) {
+      try {
+        await deleteMutation.mutateAsync(planId);
+        toast({
+          title: 'Success',
+          description: `Savings plan "${planName}" deleted successfully!`,
+        });
+      } catch (error) {
+        console.error('Failed to delete savings plan:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to delete savings plan. Please try again.',
+          variant: 'destructive',
+        });
+      }
     }
   };
 
@@ -239,6 +236,7 @@ export function Savings() {
                       {formatPercentage(plan.interest_rate)} annual interest
                     </CardDescription>
                   </CardHeader>
+                  
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
@@ -248,6 +246,10 @@ export function Savings() {
                       <div className="flex justify-between text-sm">
                         <span>Monthly Contribution:</span>
                         <span className="font-medium">{formatCurrency(plan.monthly_contribution)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>Duration:</span>
+                        <span className="font-medium">{plan.duration_months} months</span>
                       </div>
                     </div>
                     
@@ -259,30 +261,35 @@ export function Savings() {
                       <Progress value={progress} className="h-2" />
                     </div>
                     
-                    <div className="flex justify-between items-center pt-2">
-                      <div className="text-sm text-gray-600">
-                        <Calendar className="h-4 w-4 inline mr-1" />
-                        {plan.duration_months} months
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditPlan(plan)}
-                          disabled={planDetailLoading && selectedPlan?.id === plan.id}
-                        >
-                          {planDetailLoading && selectedPlan?.id === plan.id ? 'Loading...' : 'Edit'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeletePlan(plan.id)}
-                          disabled={deleteMutation.isLoading}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          {deleteMutation.isLoading ? 'Deleting...' : 'Delete'}
-                        </Button>
-                      </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewDetails(plan.id)}
+                        className="flex-1 flex items-center gap-1"
+                      >
+                        <Eye className="h-3 w-3" />
+                        Details
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEditPlan(plan)}
+                        className="flex items-center gap-1"
+                      >
+                        <Edit className="h-3 w-3" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDeletePlan(plan.id, plan.name)}
+                        disabled={deleteMutation.isLoading}
+                        className="flex items-center gap-1"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -304,17 +311,13 @@ export function Savings() {
         onClose={() => setShowCalculatorModal(false)}
       />
 
-      {selectedPlan && selectedPlanDetail && (
+      {showEditModal && selectedPlan && planDetail && (
         <EditSavingsPlanModal
           isOpen={showEditModal}
-          onClose={() => {
-            setShowEditModal(false);
-            setSelectedPlan(null);
-            setSelectedPlanDetail(null);
-          }}
-          plan={selectedPlan}
-          planDetail={selectedPlanDetail}
+          onClose={() => setShowEditModal(false)}
           onSuccess={handleEditSuccess}
+          plan={selectedPlan}
+          planDetail={planDetail}
         />
       )}
     </div>

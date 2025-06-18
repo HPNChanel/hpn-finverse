@@ -24,7 +24,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useApiError } from '@/utils/errorHandler';
+import { useApiError } from '@/utils/errorHandler.tsx';
 import { settingsService, UserSettings, UpdateSettingsRequest } from '@/services/settingsService';
 
 export function Settings() {

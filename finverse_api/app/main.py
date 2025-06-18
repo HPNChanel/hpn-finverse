@@ -17,6 +17,7 @@ from app.models.budget import Budget, BudgetAlert
 from app.models.financial_goal import FinancialGoal
 from app.models.category import Category
 from app.models.savings_plan import SavingsPlan, SavingsProjection
+from app.models.loan import Loan, LoanRepaymentSchedule, LoanPayment
 
 # Import routers with explicit imports (Clean Architecture)
 from app.routers import (
@@ -29,7 +30,8 @@ from app.routers import (
     budget_router,
     staking_router,
     settings_router,
-    savings_router
+    savings_router,
+    loans_router
 )
 
 # Import wallet router from financial_account
@@ -149,6 +151,8 @@ api_v1_router.include_router(settings_router)
 print("✅ Settings router included")
 api_v1_router.include_router(savings_router)
 print("✅ Savings router included")
+api_v1_router.include_router(loans_router)
+print("✅ Loans router included")
 
 # Include optional routers if available
 if profile_available and profile_router:
@@ -187,6 +191,18 @@ except ImportError:
     sync_scheduler = None
     sync_scheduler_available = False
     print("⚠️ Sync scheduler not available")
+
+# Include savings scheduler service
+try:
+    from app.services.scheduler_service import start_scheduler, stop_scheduler, get_scheduler
+    savings_scheduler_available = True
+    print("✅ Savings scheduler imported successfully")
+except ImportError:
+    start_scheduler = None
+    stop_scheduler = None
+    get_scheduler = None
+    savings_scheduler_available = False
+    print("⚠️ Savings scheduler not available")
 
 # Create uploads directory if it doesn't exist
 uploads_dir = Path("uploads")
@@ -279,6 +295,16 @@ async def startup_event():
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {str(e)}")
     
+    # Start savings scheduler
+    if savings_scheduler_available and start_scheduler:
+        try:
+            start_scheduler()
+            logger.info("✅ Savings scheduler started successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to start savings scheduler: {str(e)}")
+    else:
+        logger.info("⏸️ Savings scheduler not available")
+    
     # Start sync services in background (optional - can be controlled via API)
     if sync_scheduler_available and sync_scheduler:
         try:
@@ -305,6 +331,14 @@ async def shutdown_event():
     """Handle application shutdown"""
     logger = logging.getLogger(__name__)
     logger.info("🛑 Shutting down FinVerse API...")
+    
+    # Stop savings scheduler
+    if savings_scheduler_available and stop_scheduler:
+        try:
+            stop_scheduler()
+            logger.info("✅ Savings scheduler stopped")
+        except Exception as e:
+            logger.error(f"❌ Error stopping savings scheduler: {str(e)}")
     
     # Stop sync services
     if sync_scheduler_available and sync_scheduler:

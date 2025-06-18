@@ -3,7 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { Plus, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useApiError } from '@/utils/errorHandler';
+import { useApiError } from '@/utils/errorHandler.tsx';
 import { extractErrorMessage } from '@/utils/errorHelpers';
 import api from '@/lib/api';
 

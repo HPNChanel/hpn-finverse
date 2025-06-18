@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 import { Loader2, Camera, Save, Lock, Upload, RefreshCw, User as UserIcon } from 'lucide-react';
-import { useApiError } from '@/utils/errorHandler';
+import { useApiError } from '@/utils/errorHandler.tsx';
 import { useToast } from '@/hooks/use-toast';
 import { logAvatarState, testAvatarEndpoint } from '@/utils/avatarDebug';
 
@@ -414,7 +414,7 @@ export function Profile() {
                         </>
                       )}
                     </Button>
-                    {process.env.NODE_ENV === 'development' && (
+                    {import.meta.env.DEV && (
                       <Button
                         size="sm"
                         variant="outline"

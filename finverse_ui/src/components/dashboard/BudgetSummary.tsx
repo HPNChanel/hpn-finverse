@@ -402,7 +402,7 @@ export function BudgetSummary({
         )}
 
         {/* Debug Info (only in development) */}
-        {process.env.NODE_ENV === 'development' && (
+                  {import.meta.env.DEV && (
           <details className="mt-4 p-2 bg-gray-100 rounded text-xs">
             <summary className="cursor-pointer text-gray-600">Debug Info</summary>
             <pre className="mt-2 text-xs overflow-auto">

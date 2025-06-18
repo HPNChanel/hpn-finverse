@@ -18,3 +18,5 @@ python-dotenv==1.0.0
 # Blockchain sync dependencies
 web3==6.9.0
 websockets==11.0.3
+# Scheduler dependencies for savings automation
+apscheduler==3.10.4

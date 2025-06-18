@@ -541,7 +541,7 @@ export function StakeTokenForm({ onStakeSuccess, onStakeError, className }: Stak
         </Button>
         
         {/* Debug Info (remove in production) */}
-        {process.env.NODE_ENV === 'development' && selectedPool && amount && (
+                  {import.meta.env.DEV && selectedPool && amount && (
           <div className="p-2 bg-gray-100 rounded text-xs">
             <div>Button Status: {!isConnected ? 'Not Connected' : !isStakeAmountValid ? 'Invalid Amount' : 'Ready'}</div>
             <div>Amount: {amount} (type: {typeof Number(amount)})</div>

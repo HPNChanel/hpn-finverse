@@ -14,6 +14,8 @@ import { Transactions } from '@/pages/Transactions'
 import { Categories } from '@/pages/Categories'
 import { Budgets } from '@/pages/Budgets'
 import { Savings } from '@/pages/Savings'
+import { SavingsDetail } from '@/pages/SavingsDetail'
+import { Loans } from '@/pages/Loans'
 import { MainLayout, StakingLayout } from '@/layouts'
 import { StakingHistory } from '@/components/staking/StakingHistory'
 import { Toaster } from '@/components/ui/toaster'
@@ -150,6 +152,26 @@ function App() {
                     <RequireAuth>
                       <MainLayout>
                         <Savings />
+                      </MainLayout>
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/savings/:planId"
+                  element={
+                    <RequireAuth>
+                      <MainLayout>
+                        <SavingsDetail />
+                      </MainLayout>
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="/loans"
+                  element={
+                    <RequireAuth>
+                      <MainLayout>
+                        <Loans />
                       </MainLayout>
                     </RequireAuth>
                   }

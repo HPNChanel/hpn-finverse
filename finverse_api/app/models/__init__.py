@@ -17,20 +17,24 @@ from app.db.session import Base
 
 # Import all models to ensure they are registered with Base.metadata
 from .user import User
-from .transaction import Transaction
+from .user_account_balance import UserAccountBalance
+from .transaction import Transaction, SavingsTransactionType
 from .financial_account import FinancialAccount
 from .financial_goal import FinancialGoal
 from .category import Category
 from .budget import Budget, BudgetAlert
 from .stake import Stake  # Only unified Stake model
 from .staking_log import StakingLog  # Staking event logs
-from .savings_plan import SavingsPlan, SavingsProjection
+from .savings_plan import SavingsPlan, SavingsProjection, SavingsPlanStatus
+from .loan import Loan, LoanRepaymentSchedule, LoanPayment, LoanType, InterestType, AmortizationType, RepaymentFrequency, LoanStatus
 
 # Export all models for easy importing
 __all__ = [
     'Base',
     'User',
-    'Transaction', 
+    'UserAccountBalance',
+    'Transaction',
+    'SavingsTransactionType',
     'FinancialAccount',
     'FinancialGoal',
     'Category',
@@ -40,6 +44,15 @@ __all__ = [
     'StakingLog',  # Staking event logs
     'SavingsPlan',
     'SavingsProjection',
+    'SavingsPlanStatus',
+    'Loan',
+    'LoanRepaymentSchedule',
+    'LoanPayment',
+    'LoanType',
+    'InterestType',
+    'AmortizationType',
+    'RepaymentFrequency',
+    'LoanStatus',
 ]
 
 # Model relationship summary for clean architecture
@@ -68,7 +81,7 @@ MODEL_RELATIONSHIPS = {
     }
 }
 
-print("✅ Data layer models loaded (Clean Architecture)")
-print("✅ All core models registered for Alembic migrations")
-print("✅ Unified Stake model loaded - StakingPosition removed")
-print("✅ RecurringTransaction and InternalTransaction models removed - functionality moved to Transaction")
+print("Data layer models loaded (Clean Architecture)")
+print("All core models registered for Alembic migrations")
+print("Unified Stake model loaded - StakingPosition removed")
+print("RecurringTransaction and InternalTransaction models removed - functionality moved to Transaction")

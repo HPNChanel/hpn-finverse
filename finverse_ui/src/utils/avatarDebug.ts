@@ -62,7 +62,7 @@ export const testAvatarEndpoint = async () => {
 };
 
 // Auto-log avatar state changes in development
-if (process.env.NODE_ENV === 'development') {
+if (import.meta.env.DEV) {
   // Set up periodic avatar state logging
   let lastAvatarUrl: string | null = null;
   

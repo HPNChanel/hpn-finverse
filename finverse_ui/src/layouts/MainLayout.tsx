@@ -12,6 +12,7 @@ import {
   TrendingUp, 
   PieChart,
   PiggyBank,
+  Calculator,
   Menu, 
   X,
   LogOut,
@@ -45,6 +46,7 @@ const navigation = [
   { name: 'Budget', href: '/budgets', icon: PieChart },
   { name: 'Goals', href: '/goals', icon: Target },
   { name: 'Savings', href: '/savings', icon: PiggyBank },
+  { name: 'Loans', href: '/loans', icon: Calculator },
   { name: 'Staking', href: '/staking', icon: TrendingUp },
 ];
 

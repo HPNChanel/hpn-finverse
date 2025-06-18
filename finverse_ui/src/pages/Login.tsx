@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navigate, Link, useLocation } from 'react-router-dom';
-import { ErrorHandler } from '@/utils/errorHandler';
+import { ErrorHandler } from '@/utils/errorHandler.tsx';
 
 export function Login() {
   const [email, setEmail] = useState('');

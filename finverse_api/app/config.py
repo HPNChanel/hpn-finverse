@@ -18,9 +18,9 @@ try:
         DEFAULT_90DAY_APY,
         REWARD_CALCULATION_PRECISION
     )
-    print("✅ Configuration loaded from app.core.config")
+    print("Configuration loaded from app.core.config")
 except ImportError:
-    print("⚠️ Core config not available, using fallback values")
+    print("Core config not available, using fallback values")
     
     # Fallback configuration
     API_VERSION = "v1"

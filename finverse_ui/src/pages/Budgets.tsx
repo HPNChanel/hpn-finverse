@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Budget, budgetService, BudgetSummary as IBudgetSummary, BudgetFilters } from '@/services/budgetService';
-import { ErrorHandler, useApiError } from '@/utils/errorHandler';
+import { ErrorHandler, useApiError } from '@/utils/errorHandler.tsx';
 import { useToast } from '@/hooks/use-toast';
 import { CreateBudgetForm } from '@/components/budget/CreateBudgetForm';
 import { EditBudgetForm } from '@/components/budget/EditBudgetForm';

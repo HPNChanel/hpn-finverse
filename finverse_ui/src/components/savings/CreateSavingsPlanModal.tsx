@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useMutation } from 'react-query';
 import { X, DollarSign, Percent, Calendar, Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { savingsApi, CreateSavingsPlanRequest } from '@/services/savingsApi';
+import { CreateSavingsPlanRequest } from '@/services/savingsApi';
+import { useCreateSavingsPlan, useFinancialAccounts } from '@/hooks/useSavings';
 // import { SavingsCalculatorPreview } from './SavingsCalculatorPreview';
 
 interface CreateSavingsPlanModalProps {
@@ -19,6 +19,7 @@ interface CreateSavingsPlanModalProps {
 export function CreateSavingsPlanModal({ isOpen, onClose, onSuccess }: CreateSavingsPlanModalProps) {
   const [formData, setFormData] = useState<CreateSavingsPlanRequest>({
     name: '',
+    source_account_id: 0,
     initial_amount: 0,
     monthly_contribution: 0,
     interest_rate: 5,
@@ -28,28 +29,42 @@ export function CreateSavingsPlanModal({ isOpen, onClose, onSuccess }: CreateSav
   
   const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
+  
+  const createMutation = useCreateSavingsPlan();
+  const { data: financialAccounts, isLoading: accountsLoading, error: accountsError } = useFinancialAccounts();
 
-  const createMutation = useMutation(savingsApi.createSavingsPlan, {
-    onSuccess: () => {
-      onSuccess();
-      handleClose();
-      toast({
-        title: 'Success',
-        description: 'Savings plan created successfully!',
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to create savings plan',
-        variant: 'destructive',
-      });
-    },
-  });
+  // Handle financial accounts error
+  React.useEffect(() => {
+    if (accountsError) {
+      console.error('Financial accounts error:', accountsError);
+      const axiosError = accountsError as { response?: { status: number; data?: { detail?: string } } };
+      
+      if (axiosError?.response?.status === 401) {
+        toast({
+          title: 'Authentication Required',
+          description: 'Please log in again to access your accounts.',
+          variant: 'destructive',
+        });
+      } else if (axiosError?.response?.status === 422) {
+        toast({
+          title: 'Request Error',
+          description: 'There was an issue loading your accounts. Please refresh the page.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to load financial accounts. Please try again.',
+          variant: 'destructive',
+        });
+      }
+    }
+  }, [accountsError, toast]);
 
   const handleClose = () => {
     setFormData({
       name: '',
+      source_account_id: 0,
       initial_amount: 0,
       monthly_contribution: 0,
       interest_rate: 5,
@@ -60,7 +75,7 @@ export function CreateSavingsPlanModal({ isOpen, onClose, onSuccess }: CreateSav
     onClose();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validation
@@ -68,6 +83,15 @@ export function CreateSavingsPlanModal({ isOpen, onClose, onSuccess }: CreateSav
       toast({
         title: 'Validation Error',
         description: 'Please enter a plan name',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!formData.source_account_id || formData.source_account_id === 0) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a source account',
         variant: 'destructive',
       });
       return;
@@ -100,7 +124,48 @@ export function CreateSavingsPlanModal({ isOpen, onClose, onSuccess }: CreateSav
       return;
     }
 
-    createMutation.mutate(formData);
+    // Check if selected account has sufficient balance for initial amount
+    if (formData.initial_amount > 0 && financialAccounts) {
+      const selectedAccount = financialAccounts.find(acc => acc.id === formData.source_account_id);
+      if (selectedAccount && selectedAccount.balance < formData.initial_amount) {
+        toast({
+          title: 'Insufficient Funds',
+          description: `The selected account "${selectedAccount.name}" has insufficient balance. Available: $${selectedAccount.balance.toLocaleString()}, Required: $${formData.initial_amount.toLocaleString()}`,
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    try {
+      await createMutation.mutateAsync(formData);
+      handleClose();
+      onSuccess(); // Call the parent's success callback
+      toast({
+        title: 'Success',
+        description: `Savings plan "${formData.name}" created successfully!`,
+      });
+    } catch (error: unknown) {
+      console.error('Failed to create savings plan:', error);
+      
+      // Extract error message from API response
+      let errorMessage = 'Failed to create savings plan. Please try again.';
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { detail?: string } } };
+        if (axiosError.response?.data?.detail) {
+          errorMessage = axiosError.response.data.detail;
+        }
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        const errorObj = error as { message: string };
+        errorMessage = errorObj.message;
+      }
+      
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleInputChange = (field: keyof CreateSavingsPlanRequest, value: string | number) => {
@@ -157,6 +222,57 @@ export function CreateSavingsPlanModal({ isOpen, onClose, onSuccess }: CreateSav
                 className="w-full"
                 required
               />
+            </div>
+
+            {/* Source Account Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="source_account_id">Source Account *</Label>
+              <Select
+                value={formData.source_account_id.toString()}
+                onValueChange={(value) => handleInputChange('source_account_id', parseInt(value))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select account to deduct money from" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accountsLoading ? (
+                    <SelectItem value="0" disabled>Loading accounts...</SelectItem>
+                  ) : financialAccounts && financialAccounts.length > 0 ? (
+                    financialAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id.toString()}>
+                        <div className="flex flex-col text-left">
+                          <span className="font-medium">{account.name}</span>
+                          <span className="text-sm text-gray-600">
+                            {account.type} • Balance: ${account.balance.toLocaleString()}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="0" disabled>No accounts available</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-gray-600">
+                Money will be deducted from this account for initial deposit and monthly contributions
+              </p>
+              {formData.source_account_id > 0 && financialAccounts && (
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                  {(() => {
+                    const selectedAccount = financialAccounts.find(acc => acc.id === formData.source_account_id);
+                    return selectedAccount ? (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-green-900">
+                          Selected: {selectedAccount.name}
+                        </span>
+                        <span className="text-sm text-green-700">
+                          Available: ${selectedAccount.balance.toLocaleString()}
+                        </span>
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* Initial Amount */}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Folder, FolderOpen, Grid, List, Palette, Tag } from 'lucide-react';
 import { categoryService, Category, CategoryHierarchy, CategoryCreate, CategoryUpdate } from '@/services/categoryService';
-import { ErrorHandler, useApiError } from '@/utils/errorHandler';
+import { ErrorHandler, useApiError } from '@/utils/errorHandler.tsx';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';

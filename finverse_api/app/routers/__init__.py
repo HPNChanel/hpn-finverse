@@ -28,6 +28,7 @@ from .category import router as category_router  # Singular naming
 from .budget import router as budget_router  # Unified budget router
 from .settings import router as settings_router  # Settings router
 from .savings import router as savings_router  # Savings router
+from .loans import router as loans_router  # Loan simulation router
 
 # Import optional routers with error handling
 try:
@@ -66,6 +67,7 @@ __all__ = [
     "budget_router",
     "settings_router",
     "savings_router",
+    "loans_router",
 ]
 
 # Add optional routers to exports if they exist
@@ -93,6 +95,7 @@ routers = [
     budget_router,
     settings_router,
     savings_router,
+    loans_router,
 ]
 
 # Add optional routers if they exist

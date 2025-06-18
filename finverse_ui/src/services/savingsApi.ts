@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/axios';
 
 export interface SavingsPlan {
   id: number;
+  source_account_id: number;
   name: string;
   initial_amount: number;
   monthly_contribution: number;
@@ -11,6 +12,9 @@ export interface SavingsPlan {
   interest_type: 'simple' | 'compound';
   created_at: string;
   updated_at: string;
+  // Additional UI fields
+  source_account_name?: string;
+  source_account_balance?: number;
 }
 
 export interface SavingsProjection {
@@ -29,6 +33,7 @@ export interface SavingsPlanDetail extends SavingsPlan {
 
 export interface CreateSavingsPlanRequest {
   name: string;
+  source_account_id: number;
   initial_amount: number;
   monthly_contribution: number;
   interest_rate: number;
@@ -38,6 +43,7 @@ export interface CreateSavingsPlanRequest {
 
 export interface UpdateSavingsPlanRequest {
   name?: string;
+  source_account_id?: number;
   initial_amount?: number;
   monthly_contribution?: number;
   interest_rate?: number;
@@ -69,6 +75,15 @@ export interface SavingsSummary {
   total_saved: number;
   total_projected_value: number;
   total_projected_interest: number;
+}
+
+export interface FinancialAccount {
+  id: number;
+  name: string;
+  type: string;
+  balance: number;
+  currency: string;
+  is_active: boolean;
 }
 
 // API response wrapper interfaces
@@ -109,6 +124,21 @@ export const savingsApi = {
       return response.data;
     } catch (error) {
       console.error(`❌ Failed to fetch savings plan details for ID ${planId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get projections for a specific savings plan
+   */
+  async getSavingsPlanProjections(planId: number): Promise<SavingsProjection[]> {
+    try {
+      console.log(`📈 Fetching projections for savings plan ID: ${planId}`);
+      const response = await apiClient.get<SavingsProjection[]>(`/savings/${planId}/projections`);
+      console.log('✅ Savings plan projections fetched successfully:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error(`❌ Failed to fetch projections for savings plan ID ${planId}:`, error);
       throw error;
     }
   },
@@ -183,6 +213,51 @@ export const savingsApi = {
       return response.data;
     } catch (error) {
       console.error('❌ Failed to fetch savings summary:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get current user balance
+   */
+  async getUserBalance(): Promise<{ user_id: number; total_balance: number; currency: string; last_updated: string }> {
+    try {
+      console.log('💰 Fetching user balance...');
+      const response = await apiClient.get<{ user_id: number; total_balance: number; currency: string; last_updated: string }>('/savings/balance/current');
+      console.log('✅ User balance fetched successfully:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to fetch user balance:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Sync user balance from financial accounts
+   */
+  async syncUserBalance(): Promise<{ user_id: number; total_balance: number; currency: string; last_updated: string }> {
+    try {
+      console.log('🔄 Syncing user balance from financial accounts...');
+      const response = await apiClient.post<{ user_id: number; total_balance: number; currency: string; last_updated: string }>('/savings/balance/sync');
+      console.log('✅ User balance synced successfully:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to sync user balance:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get all financial accounts for the authenticated user
+   */
+  async getFinancialAccounts(): Promise<FinancialAccount[]> {
+    try {
+      console.log('🏦 Fetching financial accounts...');
+      const response = await apiClient.get<FinancialAccount[]>('/savings/financial-accounts');
+      console.log('✅ Financial accounts fetched successfully:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to fetch financial accounts:', error);
       throw error;
     }
   },

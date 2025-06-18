@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { extractErrorMessage } from './errorHelpers';
 
 /**
  * Centralized error handling utility for FinVerse

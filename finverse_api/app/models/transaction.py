@@ -17,6 +17,15 @@ class TransactionType(int, Enum):
     EXPENSE = 1  # 1 = expense
 
 
+class SavingsTransactionType(str, Enum):
+    """Enum for savings-related transaction types"""
+    SAVING_DEPOSIT = "saving_deposit"           # Initial deposit to savings plan
+    MONTHLY_CONTRIBUTION = "monthly_contribution"  # Monthly auto-deduction
+    EARLY_WITHDRAWAL = "early_withdrawal"       # Early withdrawal from plan
+    PLAN_COMPLETION = "plan_completion"         # Final payout when plan completes
+    PENALTY_DEDUCTION = "penalty_deduction"     # Penalty for early withdrawal
+
+
 class Transaction(Base):
     """Transaction model for storing transaction history"""
     
@@ -36,6 +45,19 @@ class Transaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # New fields for savings operations
+    related_savings_plan_id = Column(BigInteger, ForeignKey("savings_plans.id"), nullable=True, index=True,
+                                   comment="Related savings plan ID for savings transactions")
+    savings_transaction_type = Column(String(50), nullable=True, 
+                                    comment="Type of savings transaction (saving_deposit, monthly_contribution, etc.)")
+    note = Column(Text, nullable=True, comment="Additional notes for the transaction")
+    
+    # Additional account tracking for transfers/withdrawals
+    source_account_id = Column(BigInteger, ForeignKey("financial_accounts.id"), nullable=True, index=True,
+                              comment="Source account for the transaction (especially for savings)")
+    destination_account_id = Column(BigInteger, ForeignKey("financial_accounts.id"), nullable=True, index=True,
+                                   comment="Destination account for the transaction (for withdrawals/transfers)")
+    
     # Relationships - Fixed with explicit foreign keys
     user = relationship("User", back_populates="transactions")
     financial_account = relationship("FinancialAccount", 
@@ -48,6 +70,15 @@ class Transaction(Base):
                          overlaps="financial_account")
     category = relationship("Category", back_populates="transactions")
     budget = relationship("Budget", back_populates="transactions")
+    related_savings_plan = relationship("SavingsPlan", back_populates="transactions")
+    
+    # Additional account relationships for transfers
+    source_account = relationship("FinancialAccount", 
+                                foreign_keys=[source_account_id],
+                                overlaps="financial_account,wallet")
+    destination_account = relationship("FinancialAccount", 
+                                     foreign_keys=[destination_account_id],
+                                     overlaps="financial_account,wallet")
     
     @property
     def transaction_type_enum(self):
@@ -79,5 +110,8 @@ class Transaction(Base):
             "description": self.description,
             "transaction_date": self.transaction_date.isoformat() if self.transaction_date else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "related_savings_plan_id": self.related_savings_plan_id,
+            "savings_transaction_type": self.savings_transaction_type,
+            "note": self.note
         }

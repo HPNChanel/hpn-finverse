@@ -25,20 +25,20 @@ def main():
     print()
     
     # Verify environment setup
-    print("🔍 Verifying Alembic environment setup...")
+    print("Verifying Alembic environment setup...")
     try:
         # Test that models can be imported
         from app.models import User, Budget, BudgetAlert
         from app.models.stake import Stake  # Only unified Stake model
-        print("✅ Models imported successfully")
-        print("✅ Unified Stake model imported successfully")
+        print("Models imported successfully")
+        print("Unified Stake model imported successfully")
         
         # Test Base metadata
         from app.db.session import Base
-        print(f"✅ Base metadata contains {len(Base.metadata.tables)} tables")
+        print(f"Base metadata contains {len(Base.metadata.tables)} tables")
         
     except Exception as e:
-        print(f"⚠️ Environment setup issue: {e}")
+        print(f"Environment setup issue: {e}")
         print("Make sure all models are properly imported in alembic/env.py")
     
     try:
@@ -70,7 +70,7 @@ def main():
         print(f"Error creating migration: {e}")
         print("Error output:", e.stderr)
         print("Make sure alembic is properly configured and database is accessible")
-        print("\n🔧 Troubleshooting:")
+        print("\nTroubleshooting:")
         print("1. Check that DATABASE_URL is correctly set")
         print("2. Ensure all models are imported in alembic/env.py")
         print("3. Verify database connectivity")

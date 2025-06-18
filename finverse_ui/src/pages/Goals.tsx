@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Target, Edit2, Trash2 } from 'lucide-react';
 import { Goal, goalService } from '@/services/goal.service';
-import { useApiError } from '@/utils/errorHandler';
+import { useApiError } from '@/utils/errorHandler.tsx';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/utils';
 import { CreateGoalModal } from '@/components/goals/CreateGoalModal';

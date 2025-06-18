@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Navigate, Link, useNavigate } from 'react-router-dom';
-import { ErrorHandler } from '@/utils/errorHandler';
+import { ErrorHandler } from '@/utils/errorHandler.tsx';
 
 export function Register() {
   const [email, setEmail] = useState('');

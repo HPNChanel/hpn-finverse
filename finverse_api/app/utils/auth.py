@@ -23,9 +23,18 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid token",
+        detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # Check if token is provided
+    if not token or token.strip() == "":
+        logger.warning("Empty or missing token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     try:
         payload = verify_access_token(token)
@@ -36,9 +45,16 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
         return int(user_id)
     except JWTUtilsError as e:
         logger.warning(f"Token validation error: {str(e)}")
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except ValueError as e:
         logger.warning(f"User ID conversion error: {str(e)}")
+        raise credentials_exception
+    except Exception as e:
+        logger.error(f"Unexpected authentication error: {str(e)}")
         raise credentials_exception
 
 def get_current_user(
@@ -48,20 +64,30 @@ def get_current_user(
     """
     Get current authenticated user from database
     """
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        logger.warning(f"User with ID {user_id} not found")
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            logger.warning(f"User with ID {user_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        if not user.is_active:
+            logger.warning(f"Inactive user attempted access: {user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is disabled",
+            )
+        
+        return user
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(f"Database error while fetching user {user_id}: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
         )
-    
-    if not user.is_active:
-        logger.warning(f"Inactive user attempted access: {user_id}")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is disabled",
-        )
-    
-    return user

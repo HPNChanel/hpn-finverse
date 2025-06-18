@@ -1,24 +1,13 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-// Environment configuration
-const getApiBaseUrl = (): string => {
-  const envUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
-  const fallbackUrl = 'http://localhost:8000/api/v1';
-  
-  if (!envUrl) {
-    console.warn('⚠️ VITE_API_BASE_URL not defined, using fallback:', fallbackUrl);
-    return fallbackUrl;
-  }
-  
-  // Ensure the URL includes /api/v1 if not already present
-  const baseUrl = envUrl.endsWith('/api/v1') ? envUrl : `${envUrl}/api/v1`;
-  console.log('🔗 Axios API Base URL:', baseUrl);
-  return baseUrl;
-};
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+
+// Debug log to verify API base URL
+console.log('🔗 API Base URL:', API_BASE_URL);
 
 // Create Axios instance
 const axiosInstance: AxiosInstance = axios.create({
-  baseURL: getApiBaseUrl(),
+  baseURL: API_BASE_URL,
   timeout: 30000, // 30 seconds timeout
   headers: {
     'Content-Type': 'application/json',
@@ -106,12 +95,12 @@ axiosInstance.interceptors.response.use(
         let response;
         
         if (refreshToken) {
-          response = await axios.post(`${getApiBaseUrl()}/auth/refresh`, {
+          response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
             refresh_token: refreshToken,
           });
         } else {
           // Fallback to httpOnly cookie
-          response = await axios.post(`${getApiBaseUrl()}/auth/refresh`, {}, {
+          response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, {
             withCredentials: true
           });
         }
@@ -152,6 +141,23 @@ axiosInstance.interceptors.response.use(
     // Enhanced error logging
     if (error.response?.status === 404) {
       console.warn(`🔍 [404] Endpoint not found: ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
+    } else if (error.response?.status === 422) {
+      console.error(`🔧 [422] Validation Error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`);
+      console.error('📋 Request Details:', {
+        url: error.config?.url,
+        method: error.config?.method,
+        headers: error.config?.headers,
+        data: error.config?.data,
+      });
+      console.error('📋 Response Details:', error.response?.data);
+      
+      // Check if it's actually an auth issue disguised as 422
+      const responseData = error.response?.data as { detail?: string };
+      if (responseData?.detail?.includes('token') || 
+          responseData?.detail?.includes('credentials') ||
+          responseData?.detail?.includes('authorization')) {
+        console.warn('⚠️ 422 error appears to be authentication-related');
+      }
     } else if (error.response?.status === 500) {
       console.error(`💥 [500] Server error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`, error.response?.data);
     } else if (error.code === 'ECONNABORTED') {

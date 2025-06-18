@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useMutation } from 'react-query';
-import { X, DollarSign, Percent, Calendar, Calculator, BarChart3 } from 'lucide-react';
+import { X, DollarSign, Percent, Calendar, Calculator, BarChart3, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { savingsApi, UpdateSavingsPlanRequest, SavingsPlan, SavingsPlanDetail } from '@/services/savingsApi';
+import { UpdateSavingsPlanRequest, SavingsPlan, SavingsPlanDetail } from '@/services/savingsApi';
+import { useUpdateSavingsPlan, useFinancialAccounts } from '@/hooks/useSavings';
 import { SavingsPlanChart } from './SavingsPlanChart';
 
 interface EditSavingsPlanModalProps {
@@ -28,12 +28,15 @@ export function EditSavingsPlanModal({
 }: EditSavingsPlanModalProps) {
   const [formData, setFormData] = useState<UpdateSavingsPlanRequest>({});
   const { toast } = useToast();
+  const updateMutation = useUpdateSavingsPlan();
+  const { data: financialAccounts, isLoading: accountsLoading } = useFinancialAccounts();
 
   // Initialize form data when plan changes
   useEffect(() => {
     if (plan) {
       setFormData({
         name: plan.name,
+        source_account_id: plan.source_account_id,
         initial_amount: plan.initial_amount,
         monthly_contribution: plan.monthly_contribution,
         interest_rate: plan.interest_rate,
@@ -42,27 +45,6 @@ export function EditSavingsPlanModal({
       });
     }
   }, [plan]);
-
-  const updateMutation = useMutation(
-    (data: UpdateSavingsPlanRequest) => savingsApi.updateSavingsPlan(plan.id, data),
-    {
-      onSuccess: () => {
-        onSuccess();
-        handleClose();
-        toast({
-          title: 'Success',
-          description: 'Savings plan updated successfully!',
-        });
-      },
-      onError: (error: Error) => {
-        toast({
-          title: 'Error',
-          description: error.message || 'Failed to update savings plan',
-          variant: 'destructive',
-        });
-      },
-    }
-  );
 
   const handleClose = () => {
     setFormData({});
@@ -127,7 +109,15 @@ export function EditSavingsPlanModal({
       return;
     }
 
-    updateMutation.mutate(changedFields);
+    updateMutation.mutate(
+      { planId: plan.id, data: changedFields },
+      {
+        onSuccess: () => {
+          onSuccess();
+          handleClose();
+        },
+      }
+    );
   };
 
   const handleInputChange = (field: keyof UpdateSavingsPlanRequest, value: string | number) => {
@@ -165,6 +155,14 @@ export function EditSavingsPlanModal({
       (now.getMonth() - createdDate.getMonth())
     );
     return Math.min(100, (monthsPassed / plan.duration_months) * 100);
+  };
+
+  const hasChanges = () => {
+    if (!plan) return false;
+    return Object.entries(formData).some(([key, value]) => {
+      const originalValue = plan[key as keyof SavingsPlan];
+      return value !== originalValue && value !== undefined;
+    });
   };
 
   if (!isOpen || !plan || !planDetail) return null;
@@ -224,6 +222,40 @@ export function EditSavingsPlanModal({
                             placeholder="e.g., Emergency Fund, Vacation, New Car"
                             className="w-full"
                           />
+                        </div>
+
+                        {/* Source Account Selection */}
+                        <div className="space-y-2">
+                          <Label htmlFor="edit_source_account_id">Source Account</Label>
+                          <Select
+                            value={formData.source_account_id?.toString() || plan.source_account_id?.toString() || ''}
+                            onValueChange={(value) => handleInputChange('source_account_id', parseInt(value))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select account to deduct money from" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {accountsLoading ? (
+                                <SelectItem value="0" disabled>Loading accounts...</SelectItem>
+                              ) : financialAccounts && financialAccounts.length > 0 ? (
+                                financialAccounts.map((account) => (
+                                  <SelectItem key={account.id} value={account.id.toString()}>
+                                    <div className="flex flex-col text-left">
+                                      <span className="font-medium">{account.name}</span>
+                                      <span className="text-sm text-gray-600">
+                                        {account.type} • Balance: ${account.balance.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="0" disabled>No accounts available</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-sm text-gray-600">
+                            Money will be deducted from this account for monthly contributions
+                          </p>
                         </div>
 
                         {/* Initial Amount */}
@@ -402,10 +434,17 @@ export function EditSavingsPlanModal({
                   </Button>
                   <Button
                     type="submit"
-                    disabled={updateMutation.isLoading}
+                    disabled={updateMutation.isLoading || !hasChanges()}
                     className="flex-1 bg-blue-600 hover:bg-blue-700"
                   >
-                    {updateMutation.isLoading ? 'Updating...' : 'Update Plan'}
+                    {updateMutation.isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      'Update Plan'
+                    )}
                   </Button>
                 </div>
               </form>

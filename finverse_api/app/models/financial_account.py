@@ -49,6 +49,7 @@ class FinancialAccount(Base):
                                      overlaps="transactions")
     
     financial_goals = relationship("FinancialGoal", back_populates="account", cascade="all, delete-orphan")
+    savings_plans = relationship("SavingsPlan", back_populates="source_account")
     
     # TEMPORARILY COMMENTED OUT - stakes relationship until Stake model is properly configured
     # stakes = relationship("Stake", back_populates="financial_account", cascade="all, delete-orphan")

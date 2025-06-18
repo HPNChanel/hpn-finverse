@@ -34,6 +34,7 @@ export default defineConfig({
   // Serve static files from blockchain directory
   publicDir: 'public',
   define: {
+    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'http://localhost:8000/api/v1'),
     'import.meta.env.VITE_TOKEN_ADDRESS': JSON.stringify(process.env.VITE_TOKEN_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3'),
     'import.meta.env.VITE_STAKE_VAULT_ADDRESS': JSON.stringify(process.env.VITE_STAKE_VAULT_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512'),
           // ETH-only staking - no token address needed

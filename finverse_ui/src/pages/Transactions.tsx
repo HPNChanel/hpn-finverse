@@ -4,7 +4,7 @@ import api from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { categoryService, Category } from '@/services/categoryService';
 import { transactionService } from '@/services/transaction.service';
-import { ErrorHandler } from '@/utils/errorHandler';
+import { ErrorHandler } from '@/utils/errorHandler.tsx';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';

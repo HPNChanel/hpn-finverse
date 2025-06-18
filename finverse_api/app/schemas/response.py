@@ -8,11 +8,11 @@ from pydantic import BaseModel, Field, ConfigDict
 T = TypeVar('T')
 
 
-class StandardResponse(BaseModel):
+class StandardResponse(BaseModel, Generic[T]):
     """Standard API response format"""
     success: bool = True
     message: str = "Operation completed successfully"
-    data: Optional[Any] = None
+    data: Optional[T] = None
     errors: Optional[List[Dict[str, Any]]] = None
 
 
