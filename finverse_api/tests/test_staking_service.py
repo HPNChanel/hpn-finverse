@@ -77,9 +77,3 @@ def test_get_staking_pools_response_has_contract_addresses():
         assert isinstance(pool.token_address, str)
         assert len(pool.token_address) == 42
         assert pool.token_address.startswith('0x')
-
-if __name__ == "__main__":
-    # Run basic test
-    test_mock_pools_have_contract_addresses()
-    test_ethereum_address_validation()
-    print("✅ All tests passed!") 
