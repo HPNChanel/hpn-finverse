@@ -147,10 +147,18 @@ class TransactionService(FinancialService[Transaction, CreateTransactionSchema, 
             current_balance = Decimal(str(current_balance))
         
         # Apply transaction based on type with Decimal arithmetic
-        if transaction_type == 1:  # Income - add to balance
+        # TransactionType enum uses 0 for INCOME and 1 for EXPENSE
+        if transaction_type == TransactionType.INCOME.value:
+            # Income - add to balance
             new_balance = current_balance + amount_decimal
-        else:  # Expense - subtract from balance
+        elif transaction_type == TransactionType.EXPENSE.value:
+            # Expense - subtract from balance
             new_balance = current_balance - amount_decimal
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid transaction type"
+            )
             
         # Validate balance
         if new_balance < 0:
