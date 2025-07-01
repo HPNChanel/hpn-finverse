@@ -12,7 +12,7 @@ Dependencies: → Core Layer (models)
 Used by: API Layer (routers)
 """
 
-from pydantic import BaseModel, Field, validator, computed_field
+from pydantic import BaseModel, Field, validator, computed_field, ConfigDict
 from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from datetime import date, datetime
@@ -131,9 +131,9 @@ class LoanCreateRequest(LoanBaseSchema):
 
 class LoanCalculationRequest(BaseModel):
     """Schema for loan calculation without saving"""
-    principal_amount: Decimal = Field(..., ge=0, le=10000000)
-    interest_rate: Decimal = Field(..., ge=0, le=100)
-    loan_term_months: int = Field(..., ge=1, le=360)
+    principal_amount: Decimal = Field(..., gt=0, le=10000000, description="Loan amount must be greater than 0")
+    interest_rate: Decimal = Field(..., ge=0, le=100, description="Interest rate must be 0 or greater")
+    loan_term_months: int = Field(..., ge=1, le=360, description="Loan term must be at least 1 month")
     repayment_frequency: RepaymentFrequencyEnum = Field(RepaymentFrequencyEnum.MONTHLY)
     amortization_type: AmortizationTypeEnum = Field(AmortizationTypeEnum.REDUCING_BALANCE)
     
@@ -183,11 +183,13 @@ class RepaymentScheduleItem(BaseModel):
     is_overdue: bool = Field(False, description="Whether payment is overdue")
     days_overdue: Optional[int] = Field(None, description="Days overdue if applicable")
     
-    class Config:
-        json_encoders = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
             Decimal: lambda v: float(v),
             date: lambda v: v.isoformat()
         }
+    )
 
 
 class LoanPaymentRecord(BaseModel):
@@ -204,11 +206,13 @@ class LoanPaymentRecord(BaseModel):
     is_simulated: bool
     notes: Optional[str] = None
     
-    class Config:
-        json_encoders = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
             Decimal: lambda v: float(v),
             date: lambda v: v.isoformat()
         }
+    )
 
 
 class LoanResponse(LoanBaseSchema):
@@ -229,13 +233,14 @@ class LoanResponse(LoanBaseSchema):
     updated_at: Optional[datetime] = None
     simulation_uuid: str
     
-    class Config:
-        from_attributes = True
-        json_encoders = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
             Decimal: lambda v: float(v),
             date: lambda v: v.isoformat(),
             datetime: lambda v: v.isoformat()
         }
+    )
 
 
 class LoanDetailResponse(LoanResponse):

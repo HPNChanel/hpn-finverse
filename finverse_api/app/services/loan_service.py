@@ -63,8 +63,12 @@ class LoanCalculationEngine:
         Returns:
             Payment amount per period
         """
-        if principal <= 0 or annual_rate < 0 or term_months <= 0:
-            raise ValueError("Invalid input parameters for EMI calculation")
+        if principal <= 0:
+            raise ValueError("Principal amount must be greater than zero")
+        if annual_rate < 0:
+            raise ValueError("Interest rate cannot be negative")
+        if term_months <= 0:
+            raise ValueError("Loan term must be greater than zero months")
         
         # Convert annual rate to decimal
         annual_rate_decimal = annual_rate / 100
@@ -273,10 +277,14 @@ class LoanService(BaseService):
             repayment_freq = RepaymentFrequency(request.repayment_frequency.value) if hasattr(request.repayment_frequency, 'value') else RepaymentFrequency(request.repayment_frequency)
             amortization_type = AmortizationType(request.amortization_type.value) if hasattr(request.amortization_type, 'value') else AmortizationType(request.amortization_type)
             
+            # Convert inputs to Decimal to ensure type safety
+            principal_decimal = Decimal(str(request.principal_amount))
+            interest_decimal = Decimal(str(request.interest_rate))
+            
             # Calculate EMI
             emi_amount = self.calculation_engine.calculate_emi(
-                principal=request.principal_amount,
-                annual_rate=request.interest_rate,
+                principal=principal_decimal,
+                annual_rate=interest_decimal,
                 term_months=request.loan_term_months,
                 frequency=repayment_freq,
                 amortization_type=amortization_type
@@ -284,8 +292,8 @@ class LoanService(BaseService):
             
             # Generate schedule to calculate totals
             schedule = self.calculation_engine.generate_amortization_schedule(
-                principal=request.principal_amount,
-                annual_rate=request.interest_rate,
+                principal=principal_decimal,
+                annual_rate=interest_decimal,
                 term_months=request.loan_term_months,
                 start_date=date.today(),
                 frequency=repayment_freq,
@@ -305,7 +313,7 @@ class LoanService(BaseService):
             if repayment_freq == RepaymentFrequency.MONTHLY:
                 monthly_payment = emi_amount
             else:
-                monthly_payment = emi_amount * payments_per_year / 12
+                monthly_payment = emi_amount * Decimal(str(payments_per_year)) / Decimal('12')
             
             return LoanCalculationResult(
                 emi_amount=emi_amount,
@@ -341,11 +349,15 @@ class LoanService(BaseService):
             
             metrics = self.calculate_loan_metrics(calculation_request)
             
+            # Convert enum values from schema to model enums
+            repayment_freq = RepaymentFrequency(request.repayment_frequency.value) if hasattr(request.repayment_frequency, 'value') else RepaymentFrequency(request.repayment_frequency)
+            amortization_type = AmortizationType(request.amortization_type.value) if hasattr(request.amortization_type, 'value') else AmortizationType(request.amortization_type)
+            
             # Calculate maturity date
             maturity_date = self.calculation_engine._calculate_next_payment_date(
                 request.start_date,
                 request.loan_term_months,
-                RepaymentFrequency.MONTHLY
+                repayment_freq
             )
             
             # Create loan record
@@ -385,8 +397,8 @@ class LoanService(BaseService):
                 annual_rate=request.interest_rate,
                 term_months=request.loan_term_months,
                 start_date=request.start_date,
-                frequency=request.repayment_frequency,
-                amortization_type=request.amortization_type
+                frequency=repayment_freq,
+                amortization_type=amortization_type
             )
             
             # Create repayment schedule records

@@ -108,6 +108,48 @@ async def create_loan_simulation(
         )
 
 
+@router.post("/", response_model=StandardResponse[LoanDetailResponse])
+async def create_loan(
+    request: LoanCreateRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new loan application
+    
+    Creates an actual loan record (not a simulation) with:
+    - Complete loan details and terms
+    - Repayment schedule generation
+    - Payment tracking setup
+    - Active loan status
+    """
+    try:
+        # Ensure this is not a simulation
+        request.is_simulation = False
+        
+        loan_service = LoanService(db)
+        result = loan_service.create_loan_simulation(current_user_id, request)
+        
+        return StandardResponse(
+            success=True,
+            message="Loan created successfully",
+            data=result
+        )
+        
+    except ValueError as e:
+        logger.error(f"Loan creation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in loan creation: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during loan creation"
+        )
+
+
 @router.get("/", response_model=StandardResponse[List[LoanResponse]])
 async def get_user_loans(
     current_user_id: int = Depends(get_current_user_id),
