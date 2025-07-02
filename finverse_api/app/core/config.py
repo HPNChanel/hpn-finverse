@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     AUTH_TOKEN_EXPIRY: int = 3600  # 1 hour in seconds
     AUTH_TOKEN_TYPE: str = "bearer"
     
+    # AI Chat Configuration
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_DEFAULT_MODEL: str = "gpt-3.5-turbo"
+    OPENAI_DEFAULT_TEMPERATURE: float = 0.7
+    OPENAI_DEFAULT_MAX_TOKENS: int = 1000
+    
     # Staking Settings
     MIN_STAKE_AMOUNT: float = 0.01
     MAX_STAKE_AMOUNT: float = 1000000.0

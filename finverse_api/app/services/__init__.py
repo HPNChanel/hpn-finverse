@@ -18,6 +18,7 @@ from .staking_service import StakingService, staking_service
 from .category_service import CategoryService
 from .budget_service import BudgetService  # Unified budget service
 from .dashboard_service import DashboardService
+from .chat_service import ChatService, chat_service
 
 # Import optional services with error handling
 try:
@@ -61,6 +62,8 @@ __all__ = [
     "CategoryService",
     "BudgetService",
     "DashboardService",
+    "ChatService",
+    "chat_service",
     "staking_service",
     "user_service",
 ]
@@ -92,6 +95,7 @@ SERVICE_REGISTRY = {
     "category": CategoryService,
     "budget": BudgetService,
     "dashboard": DashboardService,
+    "chat": ChatService,
 }
 
 # Add blockchain sync services to registry

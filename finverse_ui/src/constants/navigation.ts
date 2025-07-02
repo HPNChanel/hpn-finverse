@@ -11,10 +11,11 @@ import {
   Calculator,
   BarChart3,
   TrendingDown,
-  DollarSign,
   Shield,
   Zap,
-  Award
+  Award,
+  BookOpen,
+  HelpCircle
 } from 'lucide-react';
 
 export interface NavigationSubItem {
@@ -32,6 +33,41 @@ export interface NavigationHub {
   description: string;
   subItems: NavigationSubItem[];
 }
+
+// Public navigation items (for unauthenticated users)
+export const publicNavigationItems = [
+  {
+    name: 'Home',
+    href: '/',
+    icon: Home
+  },
+  {
+    name: 'Features',
+    href: '#features',
+    icon: BookOpen
+  },
+  {
+    name: 'About',
+    href: '#about',
+    icon: HelpCircle
+  }
+];
+
+// Quick access items for authenticated users (replaces old quickAccessItems)
+export const quickAccessItems = [
+  {
+    name: 'Smart Hub',
+    href: '/hub',
+    icon: Home,
+    description: 'Your financial control center'
+  },
+  {
+    name: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+    description: 'Analytics overview'
+  }
+];
 
 export const navigationHubs: NavigationHub[] = [
   {
@@ -198,15 +234,5 @@ export const navigationHubs: NavigationHub[] = [
         available: false
       }
     ]
-  }
-];
-
-// Quick access items that appear outside of hubs
-export const quickAccessItems = [
-  {
-    name: 'Home',
-    href: '/',
-    icon: Home,
-    description: 'Return to homepage'
   }
 ]; 

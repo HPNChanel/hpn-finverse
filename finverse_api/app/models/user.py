@@ -39,6 +39,7 @@ class User(Base):
     savings_plans = relationship("SavingsPlan", back_populates="user", cascade="all, delete-orphan")
     loans = relationship("Loan", back_populates="user", cascade="all, delete-orphan")
     account_balance = relationship("UserAccountBalance", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
     
     def to_dict(self):
         """Convert user to dictionary for serialization"""

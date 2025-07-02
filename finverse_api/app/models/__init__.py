@@ -27,6 +27,7 @@ from .stake import Stake  # Only unified Stake model
 from .staking_log import StakingLog  # Staking event logs
 from .savings_plan import SavingsPlan, SavingsProjection, SavingsPlanStatus
 from .loan import Loan, LoanRepaymentSchedule, LoanPayment, LoanType, InterestType, AmortizationType, RepaymentFrequency, LoanStatus
+from .chat import ChatSession, ChatMessage, ChatRole
 
 # Export all models for easy importing
 __all__ = [
@@ -53,6 +54,9 @@ __all__ = [
     'AmortizationType',
     'RepaymentFrequency',
     'LoanStatus',
+    'ChatSession',
+    'ChatMessage',
+    'ChatRole',
 ]
 
 # Model relationship summary for clean architecture

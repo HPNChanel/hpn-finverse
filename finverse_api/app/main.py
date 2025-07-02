@@ -31,7 +31,8 @@ from app.routers import (
     staking_router,
     settings_router,
     savings_router,
-    loans_router
+    loans_router,
+    chat_router
 )
 
 # Import wallet router from financial_account
@@ -153,6 +154,8 @@ api_v1_router.include_router(savings_router)
 print("✅ Savings router included")
 api_v1_router.include_router(loans_router)
 print("✅ Loans router included")
+api_v1_router.include_router(chat_router)
+print("✅ Chat router included")
 
 # Include optional routers if available
 if profile_available and profile_router:
